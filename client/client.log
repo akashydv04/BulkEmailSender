@@ -1,0 +1,39 @@
+
+> client@0.1.0 dev
+> next dev
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.1.8:3000
+
+✓ Starting...
+  Downloading swc package @next/swc-darwin-arm64... to /Users/akashyadav/Library/Caches/next-swc
+✓ Ready in 9.7s
+ GET / 200 in 259ms (compile: 204ms, render: 55ms)
+ GET /apple-touch-icon-precomposed.png 404 in 472ms (compile: 448ms, render: 24ms)
+ GET /apple-touch-icon.png 404 in 18ms (compile: 2ms, render: 15ms)
+✓ Compiled in 324ms
+✓ Compiled in 14ms
+✓ Compiled in 23ms
+ GET / 200 in 118ms (compile: 58ms, render: 60ms)
+✓ Compiled in 11ms
+ GET / 200 in 105ms (compile: 53ms, render: 53ms)
+ GET / 200 in 30ms (compile: 8ms, render: 22ms)
+✓ Compiled in 21ms
+ GET / 200 in 109ms (compile: 63ms, render: 46ms)
+✓ Compiled in 42ms
+✓ Compiled in 17ms
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ GET / 200 in 38ms (compile: 7ms, render: 31ms)
+✓ Compiled in 31ms
+ GET / 200 in 163ms (compile: 102ms, render: 60ms)
+✓ Compiled in 28ms
+✓ Compiled in 16ms
+✓ Compiled in 54ms
+ GET / 200 in 114ms (compile: 59ms, render: 55ms)
+✓ Compiled in 37ms
+ GET / 200 in 115ms (compile: 63ms, render: 52ms)
+ GET / 200 in 35ms (compile: 10ms, render: 24ms)
+ GET / 200 in 46ms (compile: 10ms, render: 36ms)
+ GET / 200 in 36ms (compile: 13ms, render: 23ms)
+ GET / 200 in 48ms (compile: 10ms, render: 38ms)
