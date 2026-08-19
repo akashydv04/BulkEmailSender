@@ -19,24 +19,24 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl) or from allowedOrigins
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
       return;
     }
+    // Explicitly fail for disallowed origins
     callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+  optionsSuccessStatus: 204 // some legacy browsers (IE11) choke on 204
 };
 
+// Apply CORS to all routes
 app.use(cors(corsOptions));
-// Ensure OPTIONS preflight requests are responded to with CORS headers
-// Use a middleware to avoid path-to-regexp parsing issues with '*' routes on some platforms
-app.use((req, res, next) => {
-  if (req.method === "OPTIONS") {
-    return cors(corsOptions)(req, res, () => res.sendStatus(204));
-  }
-  next();
-});
+// Explicitly handle OPTIONS preflight across all routes so the Access-Control-* headers are always sent
+app.options('*', cors(corsOptions));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
