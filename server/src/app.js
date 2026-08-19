@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const apiRoutes = require("./routes/api");
+
 const app = express();
 const PORT = process.env.PORT || 5001;
 const allowedOrigins = [
@@ -32,7 +33,6 @@ app.get("/", (req, res) => {
   res.send("Email Sender API is running");
 });
 
-// Global error handler to prevent HTML 500 error pages
 app.use((err, req, res, next) => {
   console.error("Express Global Error:", err);
   res.status(500).json({ error: "Server crashed: " + err.message });

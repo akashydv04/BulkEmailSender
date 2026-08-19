@@ -16,7 +16,6 @@ export default function EmailParser({ onParsed }) {
       .replace(/\s+/g, "")
       .replace(/[^a-z]/g, "");
 
-  // Auto-detects the real header row by scanning for a cell containing "email"
   const findHeaderRowIndex = (ws) => {
     const range = XLSX.utils.decode_range(ws["!ref"]);
     for (let R = range.s.r; R <= Math.min(range.e.r, 10); R++) {
@@ -30,7 +29,6 @@ export default function EmailParser({ onParsed }) {
     return 0;
   };
 
-  // Safe wrapper — prevents "onParsed is not a function" crash
   const handleParsed = (result) => {
     if (typeof onParsed === "function") {
       onParsed(result);
@@ -59,7 +57,6 @@ export default function EmailParser({ onParsed }) {
         const wb = XLSX.read(bstr, { type: "binary" });
         const ws = wb.Sheets[wb.SheetNames[0]];
 
-        // Auto-detect real header row (skips title rows)
         const headerRowIndex = findHeaderRowIndex(ws);
 
         const data = XLSX.utils.sheet_to_json(ws, {
@@ -111,7 +108,6 @@ export default function EmailParser({ onParsed }) {
 
           if (!rawEmail || typeof rawEmail !== "string") return;
 
-          // Skip if Subject or Body is empty
           if (
             !subjectLine ||
             !fullEmailBody ||
@@ -122,7 +118,6 @@ export default function EmailParser({ onParsed }) {
             return;
           }
 
-          // Split cells that contain multiple emails (newline, comma, or semicolon)
           const emailCandidates = rawEmail
             .split(/[\n,;]+/)
             .map((e) => e.trim())
