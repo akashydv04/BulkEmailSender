@@ -6,7 +6,11 @@ const apiRoutes = require("./routes/api");
 
 const app = express();
 const PORT = process.env.PORT || 5001;
-const frontendUrl = process.env.FRONTEND_URL || (process.env.NODE_ENV === "production" ? "https://bulk-email-sender-psi.vercel.app" : undefined);
+const frontendUrl =
+  process.env.FRONTEND_URL ||
+  (process.env.NODE_ENV === "production"
+    ? "https://bulk-email-sender-psi.vercel.app"
+    : undefined);
 const allowedOrigins = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
