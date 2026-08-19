@@ -1,6 +1,38 @@
+
+> server@1.0.0 start
+> node src/app.js
+
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+Server is running on port 5001
+Configuring SMTP with user: akashydv04@gmail.com
 [dotenv@17.2.3] injecting env (0) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
 Server is running on port 5001
 Configuring SMTP with user: akashydv04@gmail.com
+Error: ENOENT: no such file or directory, open '/Users/akashyadav/StudioProjects/EmailSender/server/uploads/1774351331145-963640925-AkashYadavResume (1).pdf'
+Error: ENOENT: no such file or directory, open '/Users/akashyadav/StudioProjects/EmailSender/server/uploads/1774351345117-522574666-AkashYadavResume (1).pdf'
 Configuring SMTP with user: akashydv04@gmail.com
+Error: ENOENT: no such file or directory, open '/Users/akashyadav/StudioProjects/EmailSender/server/uploads/1774351371774-564400183-AkashYadavResume (1).pdf'
+/Users/akashyadav/StudioProjects/EmailSender/server/src/services/queueService.js:164
+                statusCallback({ type: 'sent', email: recipient.email });
+                ^
+
+TypeError: statusCallback is not a function
+    at processCampaign (/Users/akashyadav/StudioProjects/EmailSender/server/src/services/queueService.js:164:17)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+Node.js v24.13.0
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+Server is running on port 5001
 Configuring SMTP with user: akashydv04@gmail.com
+/Users/akashyadav/StudioProjects/EmailSender/server/src/services/queueService.js:164
+                statusCallback({ type: 'sent', email: recipient.email });
+                ^
+
+TypeError: statusCallback is not a function
+    at processCampaign (/Users/akashyadav/StudioProjects/EmailSender/server/src/services/queueService.js:164:17)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+Node.js v24.13.0
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+Server is running on port 5001
 Configuring SMTP with user: akashydv04@gmail.com

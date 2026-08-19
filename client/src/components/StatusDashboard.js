@@ -25,7 +25,26 @@ export default function StatusDashboard({ campaignId, onReset }) {
 
     if (!stats) return <div className="card">Loading status...</div>;
 
-    const progress = Math.round((stats.sent + stats.failed) / stats.total * 100);
+    const progress = Math.round(((stats.sent + stats.failed) / stats.total) * 100);
+
+    const downloadFailureLog = () => {
+        if (!stats || !stats.recipients) return;
+        const failedRecipients = stats.recipients.filter(r => r.status === 'failed');
+        if (failedRecipients.length === 0) return alert('No failures to log!');
+        
+        let csvContent = "data:text/csv;charset=utf-8,Email,Status\n";
+        failedRecipients.forEach(r => {
+            csvContent += `${r.email},Failed\n`;
+        });
+        
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `failed_emails_${campaignId}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
 
     return (
         <div className="card animate-fade-in" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
@@ -56,7 +75,14 @@ export default function StatusDashboard({ campaignId, onReset }) {
 
             <div style={{ marginTop: '4rem' }}>
                 {stats.status === 'completed' ? (
-                    <button className="btn btn-secondary" onClick={onReset}>Start New Campaign</button>
+                    <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+                        <button className="btn btn-secondary" onClick={onReset}>Start New Campaign</button>
+                        {stats.failed > 0 && (
+                            <button className="btn" style={{ background: 'var(--error)', color: 'white' }} onClick={downloadFailureLog}>
+                                📥 Download Failure Log
+                            </button>
+                        )}
+                    </div>
                 ) : (
                     <p className="label animate-pulse">Sending in progress...</p>
                 )}

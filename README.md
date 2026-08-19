@@ -3,11 +3,14 @@
 A production-ready web portal for sending personalized emails to multiple recipients.
 
 ## Features
-- **Smart Parsing**: Automatically extracts names from email addresses (e.g., `akash.yadav@company.com` -> "Akash Yadav").
-- **Personalization**: Dynamic greetings ("Dear Akash Yadav,").
-- **Queue System**: Rate-limited sending to avoid spam blocks.
-- **Preview**: Live preview of the email before sending.
-- **Professional Formatting**: Auto-generated headers and footers.
+- **Smart Parsing**: Automatically extracts names from email addresses.
+- **Excel & CSV Uploads**: Upload recipient lists and use dynamic placeholders like `{Name}`, `{Company}`, `{Role}` in your emails.
+- **Personalization**: Dynamic greetings and auto-replaced variables per recipient.
+- **Queue System**: Rate-limited background sending to avoid spam blocks.
+- **File Attachments**: Support for sending PDFs, DOCXs, and other files with your campaign.
+- **Secure Authentication**: End-to-end encrypted session using your Gmail App Passwords without global state leaks.
+- **Preview**: Live preview of the email rendering for the first recipient before sending.
+- **Professional Formatting**: Auto-generated headers and footers with a disclaimer.
 
 ## Tech Stack
 - **Frontend**: Next.js (App Router), Vanilla CSS (Glassmorphism design).
@@ -19,32 +22,45 @@ A production-ready web portal for sending personalized emails to multiple recipi
 
 ### Prerequisites
 - Node.js installed.
-- SMTP Credentials (optional, for real sending).
+- A Gmail account with an **App Password** generated (Since Google disabled "Less Secure Apps", you must enable 2FA and generate a 16-character App Password in your Google Account security settings).
 
-### Installation
+### 🚀 How to Run the Project
 
-1. **Clone the repository** (if specific repo exists).
-2. **Setup Server**:
-   ```bash
-   cd server
-   npm install
-   # Create .env file with:
-   # SMTP_HOST=smtp.example.com
-   # SMTP_USER=user@example.com
-   # SMTP_PASS=password
-   # PORT=5001
-   npm start
-   ```
-3. **Setup Client**:
-   ```bash
-   cd client
-   npm install
-   npm run dev
-   ```
-4. **Usage**:
-   Open [http://localhost:3000](http://localhost:3000).
+You will need two terminal windows to run both the frontend and the backend simultaneously.
 
-## detailed Architecture
+**Terminal 1: Start the Backend Server**
+```bash
+cd server
+npm install
+npm start
+```
+*(The server will run on http://localhost:5001)*
+
+**Terminal 2: Start the Frontend Client**
+```bash
+cd client
+npm install
+npm run dev
+```
+*(The React client will run on http://localhost:3000)*
+
+**Usage**:
+1. Open [http://localhost:3000](http://localhost:3000) in your web browser.
+2. Log in securely using your Gmail address and your 16-character App Password.
+3. Upload an Excel/CSV file with your recipients or paste them manually!
+
+### ⚠️ Troubleshooting
+
+**Issue: `npm error Missing script: "start"`**
+If you tried to run `npm start` and got this error, it means the `start` script was missing from `server/package.json`. This issue has now been fixed! You can use `npm start` safely. 
+
+If you prefer to run it manually without npm, you can also run:
+```bash
+cd server
+node src/app.js
+```
+
+## Detailed Architecture
 
 ### Backend
 - `controllers/emailController`: Handles parsing and campaign initiation.

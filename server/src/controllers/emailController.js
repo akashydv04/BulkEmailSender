@@ -2,6 +2,9 @@ const emailService = require('../services/emailService');
 const queueService = require('../services/queueService');
 const helper = require('../utils/helper');
 const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
+const pdfParse = require('pdf-parse');
+const { GoogleGenAI } = require('@google/genai');
 
 const campaigns = new Map();
 
@@ -138,4 +141,69 @@ exports.getCampaignStatus = async (req, res) => {
         return res.status(404).json({ error: 'Campaign not found' });
     }
     res.json(campaign);
+};
+
+exports.generateEmail = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No resume file provided' });
+        }
+        
+        if (req.file.mimetype !== 'application/pdf' && !req.file.originalname.toLowerCase().endsWith('.pdf')) {
+            return res.status(400).json({ error: 'Only PDF files are supported for resume parsing.' });
+        }
+
+        const dataBuffer = fs.readFileSync(req.file.path);
+        const data = await pdfParse(dataBuffer);
+        const text = data.text;
+
+        if (!text || text.trim().length === 0) {
+            return res.status(400).json({ error: 'Could not extract text from the PDF.' });
+        }
+
+        if (!process.env.GEMINI_API_KEY) {
+            return res.status(500).json({ error: 'GEMINI_API_KEY is not configured on the server.' });
+        }
+
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const prompt = `
+            You are an expert recruiter and copywriter.
+            I have extracted the following text from a candidate's resume:
+            ---
+            ${text.substring(0, 6000)}
+            ---
+            
+            1. Identify the candidate's core Designation (e.g., Senior Android Developer, Full-Stack Engineer).
+            2. Identify their key tech stack and years of experience.
+            3. Generate a highly attractive, expressive, and professional Email Subject and Email Body (in HTML format) for a job application or cold outreach. 
+            4. The email should sound natural, confident, and professional (avoid robotic filler).
+            5. IMPORTANT: Use these exact placeholders in the text where appropriate: {Name} (for the recruiter/hiring manager), {Company} (for the target company), {Role} (for the target job role).
+            6. Dynamically incorporate the candidate's actual Designation and Key Stack that you extracted into the email body.
+            7. Structure the email body using proper HTML tags (<p>, <br>). Ensure there is generous spacing and proper paragraph breaks to make the email highly readable and well-structured.
+
+            
+            Return the result ONLY as a valid JSON object with the following structure:
+            {
+                "designation": "...",
+                "subject": "...",
+                "body": "<p>Dear {Name},</p>..."
+            }
+        `;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-3.6-flash',
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json"
+            }
+        });
+
+        const resultText = response.text;
+        const result = JSON.parse(resultText);
+
+        res.json(result);
+    } catch (error) {
+        console.error('Error generating email:', error);
+        res.status(500).json({ error: 'Failed to generate email: ' + error.message });
+    }
 };
