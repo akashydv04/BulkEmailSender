@@ -27,11 +27,15 @@ export default function StatusDashboard({ campaignId, onReset }) {
 
   if (!stats) return <div className="card">Loading status...</div>;
 
-  const progress = Math.round(((stats.sent + stats.failed) / stats.total) * 100);
+  const progress = Math.round(
+    ((stats.sent + stats.failed) / stats.total) * 100,
+  );
 
   const downloadFailureLog = () => {
     if (!stats || !stats.recipients) return;
-    const failedRecipients = stats.recipients.filter((r) => r.status === "failed");
+    const failedRecipients = stats.recipients.filter(
+      (r) => r.status === "failed",
+    );
     if (failedRecipients.length === 0) return alert("No failures to log!");
 
     let csvContent = "data:text/csv;charset=utf-8,Email,Status\n";
