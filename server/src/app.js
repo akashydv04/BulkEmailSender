@@ -36,7 +36,14 @@ const corsOptions = {
 // Apply CORS to all routes
 app.use(cors(corsOptions));
 // Explicitly handle OPTIONS preflight across all routes so the Access-Control-* headers are always sent
-app.options('*', cors(corsOptions));
+// Avoid using app.options('*', ...) because some path-to-regexp versions reject '*' as a route pattern on certain platforms.
+// Use a middleware to respond to OPTIONS preflight requests instead.
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    return cors(corsOptions)(req, res, () => res.sendStatus(204));
+  }
+  next();
+});
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
