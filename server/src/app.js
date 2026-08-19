@@ -30,7 +30,13 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 // Ensure OPTIONS preflight requests are responded to with CORS headers
-app.options("*", cors(corsOptions));
+// Use a middleware to avoid path-to-regexp parsing issues with '*' routes on some platforms
+app.use((req, res, next) => {
+  if (req.method === "OPTIONS") {
+    return cors(corsOptions)(req, res, () => res.sendStatus(204));
+  }
+  next();
+});
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
