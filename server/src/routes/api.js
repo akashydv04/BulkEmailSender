@@ -28,4 +28,6 @@ router.post('/send-campaign', upload.array('attachments', 10), emailController.s
 
 router.get('/campaign-status/:id', emailController.getCampaignStatus);
 
+router.post('/generate-email', upload.single('resume'), emailController.generateEmail);
+
 module.exports = router;

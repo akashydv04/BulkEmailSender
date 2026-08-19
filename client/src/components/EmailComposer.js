@@ -40,12 +40,49 @@ export default function EmailComposer({ parsedData, onSend }) {
     const [subject, setSubject] = useState('Application for {Role} at {Company}');
     const [body, setBody] = useState('<p>Dear {Name},</p><p>I am reaching out regarding opportunities at {Company} for the {Role} position.</p><p>{CustomMessage}</p><p>Please find my resume attached.</p>');
     const [isSending, setIsSending] = useState(false);
+    const [isGenerating, setIsGenerating] = useState(false);
+    const resumeInputRef = useRef(null);
 
+    const handleResumeUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+            return alert('Please upload a PDF file.');
+        }
+
+        setIsGenerating(true);
+        const formData = new FormData();
+        formData.append('resume', file);
+
+        try {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
+            const res = await fetch(`${apiUrl}/generate-email`, {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to generate email');
+
+            if (data.subject) setSubject(data.subject);
+            if (data.body) setBody(data.body);
+            
+            if (data.designation) {
+                setFooter(prev => ({ ...prev, designation: data.designation }));
+            }
+        } catch (error) {
+            alert('Error generating email: ' + error.message);
+        } finally {
+            setIsGenerating(false);
+            e.target.value = ''; // Reset input
+        }
+    };
     // If the data already has native body/subject
     const isExcelConfigured = parsedData.validEmails.length > 0 && parsedData.validEmails[0].subject !== undefined;
     const maxPreviews = Math.min(parsedData.validEmails.length, 3);
     const [previewIndex, setPreviewIndex] = useState(0);
-    const [includeExcelFooter, setIncludeExcelFooter] = useState(false);
+    const [includeFooter, setIncludeFooter] = useState(true);
 
     // Footer State - Defaults cleared to avoid leaking
     const [footer, setFooter] = useState({
@@ -102,7 +139,7 @@ export default function EmailComposer({ parsedData, onSend }) {
                     contact: footer.contact,
                     email: 'auth_user_email'
                 },
-                footer: (isExcelConfigured && !includeExcelFooter) ? {} : footer,
+                footer: (!includeFooter) ? {} : footer,
                 files
             });
         } catch (e) {
@@ -113,7 +150,7 @@ export default function EmailComposer({ parsedData, onSend }) {
 
     // --- Smart Footer Logic (Frontend Mirror) ---
     const renderFooterPreview = () => {
-        if (isExcelConfigured && !includeExcelFooter) return null;
+        if (!includeFooter) return null;
 
         // Sanitization: Trim and check boolean
         const sanitize = (val) => val && val.trim().length > 0 ? val.trim() : null;
@@ -166,6 +203,36 @@ export default function EmailComposer({ parsedData, onSend }) {
                             </div>
                         ) : (
                             <>
+                                <div style={{ marginBottom: '1.5rem', padding: '1.5rem', background: 'var(--surface-hover)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                                    <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--primary)' }}>✨ Auto-Generate with AI</h3>
+                                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>Upload your resume (PDF) to dynamically generate a highly professional and tailored email draft based on your profile.</p>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                        <button 
+                                            className="btn btn-secondary"
+                                            onClick={() => resumeInputRef.current?.click()}
+                                            disabled={isGenerating}
+                                        >
+                                            {isGenerating ? 'Scanning Resume...' : '📄 Upload Resume'}
+                                        </button>
+                                        {isGenerating && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 1rem', background: 'rgba(0, 112, 243, 0.05)', borderRadius: '8px', border: '1px solid rgba(0, 112, 243, 0.2)' }}>
+                                                <style>{`
+                                                    @keyframes generateSpin { 100% { transform: rotate(360deg); } }
+                                                    @keyframes generatePulse { 50% { opacity: 0.5; } }
+                                                `}</style>
+                                                <svg style={{ animation: 'generateSpin 1s linear infinite', width: '20px', height: '20px', color: 'var(--primary, #0070f3)' }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" strokeOpacity="0.25"></circle>
+                                                    <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                </svg>
+                                                <span style={{ fontSize: '0.9rem', color: 'var(--primary, #0070f3)', fontWeight: 600, animation: 'generatePulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}>
+                                                    Scanning & tailoring email with AI...
+                                                </span>
+                                            </div>
+                                        )}
+                                        <input type="file" accept="application/pdf" ref={resumeInputRef} style={{ display: 'none' }} onChange={handleResumeUpload} />
+                                    </div>
+                                </div>
+
                                 <div style={{ marginBottom: '1rem' }}>
                                     <label className="label">Subject Line</label>
                                     <input
@@ -216,22 +283,20 @@ export default function EmailComposer({ parsedData, onSend }) {
                     <div className="card">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                             <h3 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0 }}>Footer Configuration</h3>
-                            {isExcelConfigured && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <input
-                                        type="checkbox"
-                                        id="includeExcelFooter"
-                                        checked={includeExcelFooter}
-                                        onChange={e => setIncludeExcelFooter(e.target.checked)}
-                                    />
-                                    <label htmlFor="includeExcelFooter" style={{ fontSize: '0.9rem', cursor: 'pointer', margin: 0 }}>
-                                        Append Auto-Footer
-                                    </label>
-                                </div>
-                            )}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <input
+                                    type="checkbox"
+                                    id="includeFooter"
+                                    checked={includeFooter}
+                                    onChange={e => setIncludeFooter(e.target.checked)}
+                                />
+                                <label htmlFor="includeFooter" style={{ fontSize: '0.9rem', cursor: 'pointer', margin: 0 }}>
+                                    Append Auto-Footer
+                                </label>
+                            </div>
                         </div>
                         
-                        {(!isExcelConfigured || includeExcelFooter) ? (
+                        {includeFooter ? (
                             <>
                                 <p className="label" style={{ marginBottom: '1rem' }}>
                                     Leave fields blank to automatically exclude them from the email.
@@ -266,7 +331,7 @@ export default function EmailComposer({ parsedData, onSend }) {
                             </>
                         ) : (
                             <p className="label" style={{ margin: 0 }}>
-                                Footer is disabled for Excel emails. Toggle the switch above to enable it.
+                                Footer is disabled. Toggle the switch above to enable it.
                             </p>
                         )}
                     </div>
