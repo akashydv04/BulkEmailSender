@@ -6,10 +6,46 @@ import 'react-quill-new/dist/quill.snow.css';
 // Dynamic import for React Quill to avoid SSR issues
 const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false });
 
+function replacePlaceholders(text, rowData) {
+    if (!text) return text;
+    return text.replace(/\{([^}]+)\}/g, (match, key) => {
+        const lowerKey = key.trim().toLowerCase();
+        // Find matching key in rowData ignoring case
+        const actualKey = Object.keys(rowData).find(k => k.toLowerCase() === lowerKey);
+        if (actualKey && rowData[actualKey]) return rowData[actualKey];
+        // Fallbacks
+        if (lowerKey === 'name') return 'Hiring Team';
+        if (lowerKey === 'company') return 'your company';
+        if (lowerKey === 'role') return 'the open role';
+        return '';
+    });
+}
+
+function formatBody(rawBody) {
+    if (!rawBody) return '';
+    let clean = rawBody.trim();
+    // Reduce multiple blank lines
+    clean = clean.replace(/\n\s*\n\s*\n/g, '\n\n');
+    const hasGreeting = /^(dear|hi|hello)\s/i.test(clean);
+    
+    let finalBody = clean;
+    if (!hasGreeting) {
+        finalBody = `Dear Hiring Team,\n\n${clean}`;
+    }
+    // Convert newlines to breaks
+    return finalBody.replace(/\n/g, '<br/>');
+}
+
 export default function EmailComposer({ parsedData, onSend }) {
-    const [subject, setSubject] = useState('');
-    const [body, setBody] = useState('<p>I wanted to reach out regarding...</p>');
+    const [subject, setSubject] = useState('Application for {Role} at {Company}');
+    const [body, setBody] = useState('<p>Dear {Name},</p><p>I am reaching out regarding opportunities at {Company} for the {Role} position.</p><p>{CustomMessage}</p><p>Please find my resume attached.</p>');
     const [isSending, setIsSending] = useState(false);
+
+    // If the data already has native body/subject
+    const isExcelConfigured = parsedData.validEmails.length > 0 && parsedData.validEmails[0].subject !== undefined;
+    const maxPreviews = Math.min(parsedData.validEmails.length, 3);
+    const [previewIndex, setPreviewIndex] = useState(0);
+    const [includeExcelFooter, setIncludeExcelFooter] = useState(false);
 
     // Footer State - Defaults cleared to avoid leaking
     const [footer, setFooter] = useState({
@@ -23,8 +59,23 @@ export default function EmailComposer({ parsedData, onSend }) {
     const [files, setFiles] = useState([]);
     const fileInputRef = useRef(null);
 
-    const previewRecipient = parsedData.validEmails[0] || { name: 'John Doe', email: 'john@example.com', source: 'Example' };
-    const previewGreeting = previewRecipient.name ? `Dear ${previewRecipient.name},` : 'Hello,';
+    const previewRecipient = parsedData.validEmails[previewIndex] || { 
+        name: 'John Doe', 
+        email: 'john@example.com', 
+        source: 'Example',
+        role: 'Software Engineer',
+        company: 'Tech Corp',
+        custommessage: 'I love your product!' 
+    };
+    
+    // Apply dynamic placeholder replacement for Live Preview
+    const previewSubject = isExcelConfigured 
+        ? replacePlaceholders(previewRecipient.subject, previewRecipient) 
+        : replacePlaceholders(subject, previewRecipient);
+        
+    const previewBody = isExcelConfigured 
+        ? formatBody(replacePlaceholders(previewRecipient.body, previewRecipient)) 
+        : replacePlaceholders(body, previewRecipient);
 
     const handleFileChange = (e) => {
         if (e.target.files) {
@@ -37,13 +88,13 @@ export default function EmailComposer({ parsedData, onSend }) {
     };
 
     const handleSend = async () => {
-        if (!subject || !body) return alert('Please fill in all fields');
+        if (!isExcelConfigured && (!subject || !body)) return alert('Please fill in all fields');
         setIsSending(true);
         try {
             await onSend({
                 recipients: parsedData.validEmails,
-                subject,
-                body, // Now passing HTML string
+                subject: isExcelConfigured ? 'Excel Configured' : subject,
+                body: isExcelConfigured ? 'Excel Configured' : body, // Now passing HTML string
                 senderDetails: {
                     name: footer.name,
                     company: footer.company,
@@ -51,7 +102,7 @@ export default function EmailComposer({ parsedData, onSend }) {
                     contact: footer.contact,
                     email: 'auth_user_email'
                 },
-                footer,
+                footer: (isExcelConfigured && !includeExcelFooter) ? {} : footer,
                 files
             });
         } catch (e) {
@@ -62,6 +113,8 @@ export default function EmailComposer({ parsedData, onSend }) {
 
     // --- Smart Footer Logic (Frontend Mirror) ---
     const renderFooterPreview = () => {
+        if (isExcelConfigured && !includeExcelFooter) return null;
+
         // Sanitization: Trim and check boolean
         const sanitize = (val) => val && val.trim().length > 0 ? val.trim() : null;
 
@@ -105,27 +158,37 @@ export default function EmailComposer({ parsedData, onSend }) {
                     <div className="card">
                         <h2 style={{ fontSize: '1.5rem', marginBottom: '1.5rem', fontWeight: 700 }}>2. Compose Content</h2>
 
-                        <div style={{ marginBottom: '1rem' }}>
-                            <label className="label">Subject Line</label>
-                            <input
-                                className="input"
-                                value={subject}
-                                onChange={e => setSubject(e.target.value)}
-                                placeholder="Required"
-                            />
-                        </div>
-
-                        <div style={{ marginBottom: '1rem' }}>
-                            <label className="label">Message Body (Rich Text)</label>
-                            <div style={{ background: 'white', color: 'black', borderRadius: '8px', overflow: 'hidden' }}>
-                                <ReactQuill
-                                    theme="snow"
-                                    value={body}
-                                    onChange={setBody}
-                                    style={{ height: '300px', marginBottom: '50px' }} // mb for toolbar spacing
-                                />
+                        {isExcelConfigured ? (
+                            <div style={{ padding: '2rem', background: 'var(--surface-hover)', borderRadius: '8px', textAlign: 'center' }}>
+                                <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '1rem' }}>📄</span>
+                                <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.5rem' }}>Templates Loaded from Excel</h3>
+                                <p className="label">Each recipient will receive their dynamically mapped Subject Line and Full Email Body.</p>
                             </div>
-                        </div>
+                        ) : (
+                            <>
+                                <div style={{ marginBottom: '1rem' }}>
+                                    <label className="label">Subject Line</label>
+                                    <input
+                                        className="input"
+                                        value={subject}
+                                        onChange={e => setSubject(e.target.value)}
+                                        placeholder="Required"
+                                    />
+                                </div>
+
+                                <div style={{ marginBottom: '1rem' }}>
+                                    <label className="label">Message Body (Rich Text)</label>
+                                    <div style={{ background: 'white', color: 'black', borderRadius: '8px', overflow: 'hidden' }}>
+                                        <ReactQuill
+                                            theme="snow"
+                                            value={body}
+                                            onChange={setBody}
+                                            style={{ height: '300px', marginBottom: '50px' }} // mb for toolbar spacing
+                                        />
+                                    </div>
+                                </div>
+                            </>
+                        )}
 
                         <div style={{ marginTop: '2rem' }}>
                             <label className="label">Attachments</label>
@@ -151,37 +214,61 @@ export default function EmailComposer({ parsedData, onSend }) {
                     </div>
 
                     <div className="card">
-                        <h3 style={{ fontSize: '1.2rem', marginBottom: '1rem', fontWeight: 600 }}>Footer Configuration</h3>
-                        <p className="label" style={{ marginBottom: '1rem' }}>
-                            Leave fields blank to automatically exclude them from the email.
-                        </p>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                            <div>
-                                <label className="label">Full Name</label>
-                                <input className="input" value={footer.name} onChange={e => setFooter({ ...footer, name: e.target.value })} />
-                            </div>
-                            <div>
-                                <label className="label">Role / Designation</label>
-                                <input className="input" value={footer.designation} onChange={e => setFooter({ ...footer, designation: e.target.value })} />
-                            </div>
-                            <div>
-                                <label className="label">Company</label>
-                                <input className="input" value={footer.company} onChange={e => setFooter({ ...footer, company: e.target.value })} />
-                            </div>
-                            <div>
-                                <label className="label">Contact Info</label>
-                                <input className="input" value={footer.contact} onChange={e => setFooter({ ...footer, contact: e.target.value })} />
-                            </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                            <h3 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0 }}>Footer Configuration</h3>
+                            {isExcelConfigured && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <input
+                                        type="checkbox"
+                                        id="includeExcelFooter"
+                                        checked={includeExcelFooter}
+                                        onChange={e => setIncludeExcelFooter(e.target.checked)}
+                                    />
+                                    <label htmlFor="includeExcelFooter" style={{ fontSize: '0.9rem', cursor: 'pointer', margin: 0 }}>
+                                        Append Auto-Footer
+                                    </label>
+                                </div>
+                            )}
                         </div>
-                        <div style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <input
-                                type="checkbox"
-                                id="disclaimer"
-                                checked={footer.disclaimer}
-                                onChange={e => setFooter({ ...footer, disclaimer: e.target.checked })}
-                            />
-                            <label htmlFor="disclaimer" style={{ fontSize: '0.9rem', cursor: 'pointer' }}>Include Confidentiality Disclaimer</label>
-                        </div>
+                        
+                        {(!isExcelConfigured || includeExcelFooter) ? (
+                            <>
+                                <p className="label" style={{ marginBottom: '1rem' }}>
+                                    Leave fields blank to automatically exclude them from the email.
+                                </p>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                    <div>
+                                        <label className="label">Full Name</label>
+                                        <input className="input" value={footer.name} onChange={e => setFooter({ ...footer, name: e.target.value })} />
+                                    </div>
+                                    <div>
+                                        <label className="label">Role / Designation</label>
+                                        <input className="input" value={footer.designation} onChange={e => setFooter({ ...footer, designation: e.target.value })} />
+                                    </div>
+                                    <div>
+                                        <label className="label">Company</label>
+                                        <input className="input" value={footer.company} onChange={e => setFooter({ ...footer, company: e.target.value })} />
+                                    </div>
+                                    <div>
+                                        <label className="label">Contact Info</label>
+                                        <input className="input" value={footer.contact} onChange={e => setFooter({ ...footer, contact: e.target.value })} />
+                                    </div>
+                                </div>
+                                <div style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <input
+                                        type="checkbox"
+                                        id="disclaimer"
+                                        checked={footer.disclaimer}
+                                        onChange={e => setFooter({ ...footer, disclaimer: e.target.checked })}
+                                    />
+                                    <label htmlFor="disclaimer" style={{ fontSize: '0.9rem', cursor: 'pointer' }}>Include Confidentiality Disclaimer</label>
+                                </div>
+                            </>
+                        ) : (
+                            <p className="label" style={{ margin: 0 }}>
+                                Footer is disabled for Excel emails. Toggle the switch above to enable it.
+                            </p>
+                        )}
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -203,8 +290,24 @@ export default function EmailComposer({ parsedData, onSend }) {
                     <div className="card" style={{ position: 'sticky', top: '5rem', border: '1px solid var(--primary)', maxHeight: '80vh', overflowY: 'auto' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                             <h3 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--primary)' }}>
-                                Live Preview
+                                Live Preview {isExcelConfigured && `(${previewIndex + 1}/${maxPreviews})`}
                             </h3>
+                            {isExcelConfigured && (
+                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                    <button 
+                                        className="btn btn-secondary" 
+                                        style={{ padding: '0.2rem 0.5rem', fontSize: '12px' }} 
+                                        disabled={previewIndex === 0} 
+                                        onClick={() => setPreviewIndex((prev) => Math.max(prev - 1, 0))}
+                                    >◀ Prev</button>
+                                    <button 
+                                        className="btn btn-secondary" 
+                                        style={{ padding: '0.2rem 0.5rem', fontSize: '12px' }} 
+                                        disabled={previewIndex >= maxPreviews - 1} 
+                                        onClick={() => setPreviewIndex((prev) => Math.min(prev + 1, maxPreviews - 1))}
+                                    >Next ▶</button>
+                                </div>
+                            )}
                         </div>
 
                         <div style={{ background: '#fff', color: '#171717', padding: '2rem', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', fontFamily: 'Arial, sans-serif' }}>
@@ -212,15 +315,14 @@ export default function EmailComposer({ parsedData, onSend }) {
                             <div style={{ borderBottom: '1px solid #eee', paddingBottom: '1rem', marginBottom: '1rem' }}>
                                 <p style={{ fontSize: '0.9rem', color: '#666' }}><strong>To:</strong> {previewRecipient.email}</p>
                                 <p style={{ fontSize: '0.9rem', color: '#666' }}><strong>From:</strong> {footer.name} &lt;auth@email.com&gt;</p>
-                                <p style={{ fontSize: '1.1rem', fontWeight: 'bold', marginTop: '0.5rem' }}>{subject || '(No Subject)'}</p>
+                                <p style={{ fontSize: '1.1rem', fontWeight: 'bold', marginTop: '0.5rem' }}>{previewSubject || '(No Subject)'}</p>
                             </div>
 
                             {/* Body Content */}
                             <div style={{ lineHeight: '1.6', fontSize: '14px' }}>
-                                <p>{previewGreeting}</p>
 
                                 {/* Render HTML Body safely */}
-                                <div className="email-body-content" style={{ margin: '1rem 0' }} dangerouslySetInnerHTML={{ __html: body }}></div>
+                                <div className="email-body-content" style={{ margin: '1rem 0' }} dangerouslySetInnerHTML={{ __html: previewBody }}></div>
 
                                 {files.length > 0 && (
                                     <div style={{ borderTop: '1px dashed #eee', marginTop: '1rem', paddingTop: '0.5rem' }}>

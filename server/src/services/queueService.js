@@ -50,24 +50,84 @@ function generateFooterHtml(footer) {
   `;
 }
 
-async function processCampaign(recipients, subject, bodyTemplate, senderDetails, footer, attachments, statusCallback) {
-    // Pre-generate sanitized body (once per campaign usually, but if personalized vars added later, move inside loop)
-    // Sanitize to prevent malicious script injection if users paste weird stuff
-    const cleanBody = sanitizeHtml(bodyTemplate, {
-        allowedTags: sanitizeHtml.defaults.allowedTags.concat(['img', 'h1', 'h2', 'span']),
-        allowedAttributes: {
-            '*': ['style', 'class'],
-            'a': ['href', 'target'],
-            'img': ['src']
+function replacePlaceholders(text, rowData) {
+    if (!text) return text;
+    return text.replace(/\{([^}]+)\}/g, (match, key) => {
+        const lowerKey = key.trim().toLowerCase();
+        
+        // Find matching key in rowData ignoring case
+        const actualKey = Object.keys(rowData).find(k => k.toLowerCase() === lowerKey);
+        if (actualKey && rowData[actualKey]) {
+            return rowData[actualKey];
         }
-    });
 
+        // Fallbacks
+        if (lowerKey === 'name') return 'Hiring Team';
+        if (lowerKey === 'company') return 'your company';
+        if (lowerKey === 'role') return 'the open role';
+
+        return ''; // Or return empty string for other custom fields
+    });
+}
+
+function formatBody(rawBody) {
+    if (!rawBody) return { cleanText: '', hasSignature: false };
+    let clean = rawBody.trim();
+    // Reduce multiple blank lines
+    clean = clean.replace(/\n\s*\n\s*\n/g, '\n\n');
+    const hasGreeting = /^(dear|hi|hello)\s/i.test(clean);
+    
+    let finalBody = clean;
+    if (!hasGreeting) {
+        finalBody = `Dear Hiring Team,\n\n${clean}`;
+    }
+    
+    // Check if body has signature
+    const hasSignature = /(best regards|sincerely|thanks|cheers)[,\s]*\n/i.test(clean) || /akash yadav/i.test(clean);
+    
+    // Convert newlines to breaks
+    return { cleanText: finalBody.replace(/\n/g, '<br/>'), hasSignature };
+}
+
+async function processCampaign(recipients, subject, bodyTemplate, senderDetails, footer, attachments, statusCallback) {
     const footerHtml = generateFooterHtml(footer);
 
     for (const recipient of recipients) {
-        const greeting = recipient.name
-            ? `Dear ${recipient.name},`
-            : 'Hello,';
+        const isExcel = !!recipient.subject && !!recipient.body;
+        const baseSubject = isExcel ? recipient.subject : subject;
+        const baseBody = isExcel ? recipient.body : bodyTemplate;
+
+        // Replace placeholders dynamically
+        const personalizedSubjectRaw = replacePlaceholders(baseSubject, recipient);
+        const personalizedSubject = personalizedSubjectRaw.length > 200 
+            ? personalizedSubjectRaw.substring(0, 197) + '...' 
+            : personalizedSubjectRaw;
+
+        let personalizedBodyRaw = replacePlaceholders(baseBody, recipient);
+        
+        let finalBodyText, footerIncluded;
+        if (isExcel) {
+             const { cleanText, hasSignature } = formatBody(personalizedBodyRaw);
+             finalBodyText = sanitizeHtml(cleanText, {
+                allowedTags: sanitizeHtml.defaults.allowedTags.concat(['img', 'h1', 'h2', 'span', 'strong', 'em', 'p', 'br', 'div', 'ul', 'li', 'ol']),
+                allowedAttributes: {
+                    '*': ['style', 'class'],
+                    'a': ['href', 'target'],
+                    'img': ['src']
+                }
+             });
+             footerIncluded = !hasSignature;
+        } else {
+             finalBodyText = sanitizeHtml(personalizedBodyRaw, {
+                allowedTags: sanitizeHtml.defaults.allowedTags.concat(['img', 'h1', 'h2', 'span', 'strong', 'em', 'p', 'br', 'div', 'ul', 'li', 'ol']),
+                allowedAttributes: {
+                    '*': ['style', 'class'],
+                    'a': ['href', 'target'],
+                    'img': ['src']
+                }
+             });
+             footerIncluded = true;
+        }
 
         // Composition
         const fullHtml = `
@@ -75,13 +135,11 @@ async function processCampaign(recipients, subject, bodyTemplate, senderDetails,
       <html>
       <body style="font-family: Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6;">
         <div style="max-width: 600px; margin: 0 auto;">
-          <p style="margin-bottom: 20px;">${greeting}</p>
-          
           <div style="margin-bottom: 20px;">
-            ${cleanBody}
+            ${finalBodyText}
           </div>
 
-          ${footerHtml}
+          ${footerIncluded ? footerHtml : ''}
         </div>
       </body>
       </html>
@@ -93,7 +151,7 @@ async function processCampaign(recipients, subject, bodyTemplate, senderDetails,
         while (attempts < MAX_RETRIES && !sent) {
             const result = await emailService.sendEmail({
                 to: recipient.email,
-                subject: subject,
+                subject: personalizedSubject,
                 html: fullHtml,
                 fromName: footer.name || senderDetails.name,
                 fromEmail: senderDetails.email, // Backend auth email
