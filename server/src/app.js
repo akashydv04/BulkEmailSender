@@ -70,10 +70,13 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.set("etag", false);
 
 // Global anti-caching headers for all /api routes to prevent browser caching
-app.use('/api', (req, res, next) => {
-  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.set('Pragma', 'no-cache');
-  res.set('Expires', '0');
+app.use("/api", (req, res, next) => {
+  res.set(
+    "Cache-Control",
+    "no-store, no-cache, must-revalidate, proxy-revalidate",
+  );
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
   next();
 });
 
