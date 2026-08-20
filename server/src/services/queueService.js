@@ -154,7 +154,10 @@ async function processCampaign(
       const baseBody = isExcel ? recipient.body : bodyTemplate;
 
       // Replace placeholders dynamically
-      const personalizedSubjectRaw = replacePlaceholders(baseSubject, recipient);
+      const personalizedSubjectRaw = replacePlaceholders(
+        baseSubject,
+        recipient,
+      );
       const personalizedSubject = sanitizeEmailSubject(
         personalizedSubjectRaw.length > 200
           ? personalizedSubjectRaw.substring(0, 197) + "..."
@@ -227,7 +230,9 @@ async function processCampaign(
           if (attempts >= MAX_RETRIES) {
             statusCallback({ type: "failed", email: recipient.email });
           } else {
-            await new Promise((resolve) => setTimeout(resolve, 2000 * attempts));
+            await new Promise((resolve) =>
+              setTimeout(resolve, 2000 * attempts),
+            );
           }
         }
       }
