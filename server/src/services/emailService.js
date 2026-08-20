@@ -4,17 +4,22 @@ const { htmlToText } = require('html-to-text');
 let transporter = null;
 
 const createTransporter = (user, pass) => {
-    if (user && pass) {
-        console.log(`Configuring SMTP with user: ${user}`);
+    const smtpUser = user || process.env.SMTP_USER;
+    const smtpPass = pass || process.env.SMTP_PASS;
+
+    if (smtpUser && smtpPass) {
+        console.log(`Configuring SMTP with user: ${smtpUser}`);
         transporter = nodemailer.createTransport({
-            host: 'smtp.gmail.com',
-            port: 587,
-            secure: false,
-            auth: { user, pass },
+            host: process.env.SMTP_HOST || 'smtp.gmail.com',
+            port: Number(process.env.SMTP_PORT || 587),
+            secure: process.env.SMTP_SECURE === 'true',
+            auth: { user: smtpUser, pass: smtpPass },
             tls: { rejectUnauthorized: false }
         });
         return true;
-    } else if (process.env.SMTP_HOST && process.env.SMTP_USER) {
+    }
+
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
         transporter = nodemailer.createTransport({
             host: process.env.SMTP_HOST,
             port: process.env.SMTP_PORT || 587,
@@ -38,30 +43,29 @@ exports.configure = (user, pass) => {
 exports.sendEmail = async ({ to, subject, html, fromName, fromEmail, attachments }) => {
     const text = htmlToText(html);
 
-    if (transporter) {
-        try {
-            const senderAddress = transporter.transporter.auth.user || fromEmail;
+    if (!transporter) {
+        const missingConfig = !process.env.SMTP_USER || !process.env.SMTP_PASS;
+        const message = missingConfig
+            ? 'SMTP is not configured on the server. Set SMTP_USER and SMTP_PASS in Render/production environment.'
+            : 'SMTP transport could not be initialized.';
+        console.error(message);
+        return { success: false, error: message };
+    }
 
-            const info = await transporter.sendMail({
-                from: `"${fromName}" <${senderAddress}>`,
-                to,
-                subject,
-                text,
-                html,
-                attachments: attachments || []
-            });
-            return { success: true, messageId: info.messageId };
-        } catch (error) {
-            console.error(`Failed to send to ${to}:`, error);
-            return { success: false, error: error.message };
-        }
-    } else {
-        // Mock Send
-        await new Promise(resolve => setTimeout(resolve, 500));
-        console.log(`[MOCK EMAIL] To: ${to} | Subject: ${subject}`);
-        if (attachments && attachments.length > 0) {
-            console.log(`[MOCK FILES]: ${attachments.map(a => a.filename).join(', ')}`);
-        }
-        return { success: true, messageId: `mock-${Date.now()}` };
+    try {
+        const senderAddress = transporter.options.auth?.user || fromEmail;
+
+        const info = await transporter.sendMail({
+            from: `"${fromName}" <${senderAddress}>`,
+            to,
+            subject,
+            text,
+            html,
+            attachments: attachments || []
+        });
+        return { success: true, messageId: info.messageId };
+    } catch (error) {
+        console.error(`Failed to send to ${to}:`, error);
+        return { success: false, error: error.message };
     }
 };
