@@ -3,10 +3,20 @@ const sanitizeHtml = require('sanitize-html');
 
 const MAX_RETRIES = 3;
 const RATE_LIMIT_DELAY = 2000;
+const SMTP_TIMEOUT_MS = 15000;
 
 exports.addCampaignToQueue = async (campaignId, recipients, subject, bodyTemplate, senderDetails, footer, attachments, statusCallback) => {
     processCampaign(recipients, subject, bodyTemplate, senderDetails, footer, attachments, statusCallback);
 };
+
+async function sendWithTimeout(payload) {
+    return Promise.race([
+        emailService.sendEmail(payload),
+        new Promise((_, reject) => {
+            setTimeout(() => reject(new Error(`SMTP send timed out after ${SMTP_TIMEOUT_MS}ms`)), SMTP_TIMEOUT_MS);
+        })
+    ]);
+}
 
 
 // --- Footer Generation Logic ---
@@ -149,19 +159,29 @@ async function processCampaign(recipients, subject, bodyTemplate, senderDetails,
         let sent = false;
 
         while (attempts < MAX_RETRIES && !sent) {
-            const result = await emailService.sendEmail({
-                to: recipient.email,
-                subject: personalizedSubject,
-                html: fullHtml,
-                fromName: footer.name || senderDetails.name,
-                fromEmail: senderDetails.email, // Backend auth email
-                attachments: attachments
-            });
+            try {
+                const result = await sendWithTimeout({
+                    to: recipient.email,
+                    subject: personalizedSubject,
+                    html: fullHtml,
+                    fromName: footer.name || senderDetails.name,
+                    fromEmail: senderDetails.email,
+                    attachments: attachments
+                });
 
-            if (result.success) {
-                sent = true;
-                statusCallback({ type: 'sent', email: recipient.email });
-            } else {
+                if (result.success) {
+                    sent = true;
+                    statusCallback({ type: 'sent', email: recipient.email });
+                } else {
+                    attempts++;
+                    if (attempts >= MAX_RETRIES) {
+                        statusCallback({ type: 'failed', email: recipient.email });
+                    } else {
+                        await new Promise(resolve => setTimeout(resolve, 2000 * attempts));
+                    }
+                }
+            } catch (error) {
+                console.error(`SMTP timeout or error for ${recipient.email}:`, error.message);
                 attempts++;
                 if (attempts >= MAX_RETRIES) {
                     statusCallback({ type: 'failed', email: recipient.email });
