@@ -40,7 +40,10 @@ export default function Home() {
     }
 
     const apiBaseUrl =
-      process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001/api";
+      process.env.NEXT_PUBLIC_API_URL ||
+      (process.env.NODE_ENV === "production"
+        ? "https://bulkemailsender-pjpa.onrender.com/api"
+        : "http://localhost:5001/api");
     const res = await fetch(`${apiBaseUrl}/send-campaign`, {
       method: "POST",
       body: formData, // No Content-Type header; fetch sets it with boundary

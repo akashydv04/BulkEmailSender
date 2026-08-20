@@ -56,7 +56,10 @@ export default function EmailComposer({ parsedData, onSend }) {
         formData.append('resume', file);
 
         try {
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL ||
+              (process.env.NODE_ENV === 'production'
+                ? 'https://bulkemailsender-pjpa.onrender.com/api'
+                : 'http://localhost:5001/api');
             const res = await fetch(`${apiUrl}/generate-email`, {
                 method: 'POST',
                 body: formData

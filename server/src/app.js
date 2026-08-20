@@ -8,19 +8,34 @@ const app = express();
 const PORT = process.env.PORT || 5001;
 const frontendUrl =
   process.env.FRONTEND_URL ||
-  (process.env.NODE_ENV === "production"
-    ? "https://bulk-email-sender-psi.vercel.app"
-    : undefined);
+  "https://bulk-email-sender-psi.vercel.app";
 const allowedOrigins = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
+  "https://bulk-email-sender-psi.vercel.app",
   frontendUrl,
 ].filter(Boolean);
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+
+  try {
+    const hostname = new URL(origin).hostname;
+    return (
+      allowedOrigins.includes(origin) ||
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname.endsWith(".vercel.app")
+    );
+  } catch {
+    return false;
+  }
+};
 
 const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps, curl) or from allowedOrigins
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (isAllowedOrigin(origin)) {
       callback(null, true);
       return;
     }
@@ -28,7 +43,7 @@ const corsOptions = {
     callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
-  methods: ["GET", "POST", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
   optionsSuccessStatus: 204 // some legacy browsers (IE11) choke on 204
 };

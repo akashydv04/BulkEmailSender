@@ -19,7 +19,10 @@ export default function SmtpConfig({ onConfigured }) {
 
     try {
       const apiBaseUrl =
-        process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001/api";
+        process.env.NEXT_PUBLIC_API_URL ||
+        (process.env.NODE_ENV === "production"
+          ? "https://bulkemailsender-pjpa.onrender.com/api"
+          : "http://localhost:5001/api");
       const res = await fetch(`${apiBaseUrl}/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
