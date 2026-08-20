@@ -2,18 +2,27 @@ const nodemailer = require("nodemailer");
 const { htmlToText } = require("html-to-text");
 
 let transporter = null;
+let runtimeSmtpUser = null;
+let runtimeSmtpPass = null;
 
 const createTransporter = (user, pass) => {
-  const smtpUser = user || process.env.SMTP_USER;
-  const smtpPass = pass || process.env.SMTP_PASS;
+  const activeUser = user ?? runtimeSmtpUser ?? process.env.SMTP_USER;
+  const activePass = pass ?? runtimeSmtpPass ?? process.env.SMTP_PASS;
 
-  if (smtpUser && smtpPass) {
-    console.log(`Configuring SMTP with user: ${smtpUser}`);
+  if (user && pass) {
+    runtimeSmtpUser = user;
+    runtimeSmtpPass = pass;
+    process.env.SMTP_USER = user;
+    process.env.SMTP_PASS = pass;
+  }
+
+  if (activeUser && activePass) {
+    console.log(`Configuring SMTP with user: ${activeUser}`);
     transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || "smtp.gmail.com",
       port: Number(process.env.SMTP_PORT || 587),
       secure: process.env.SMTP_SECURE === "true",
-      auth: { user: smtpUser, pass: smtpPass },
+      auth: { user: activeUser, pass: activePass },
       tls: { rejectUnauthorized: false },
     });
     return true;
@@ -37,6 +46,14 @@ const createTransporter = (user, pass) => {
 createTransporter();
 
 exports.configure = (user, pass) => {
+  if (!user || !pass) {
+    return false;
+  }
+
+  runtimeSmtpUser = user;
+  runtimeSmtpPass = pass;
+  process.env.SMTP_USER = user;
+  process.env.SMTP_PASS = pass;
   return createTransporter(user, pass);
 };
 

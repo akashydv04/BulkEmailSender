@@ -14,7 +14,12 @@ exports.configureSmtp = async (req, res) => {
         if (!email || !password) {
             return res.status(400).json({ error: 'Email and Password are required' });
         }
-        emailService.configure(email, password);
+
+        const configured = emailService.configure(email, password);
+        if (!configured) {
+            return res.status(500).json({ error: 'SMTP configuration failed. Check the provided email and app password.' });
+        }
+
         res.json({ success: true, message: 'SMTP Configured successfully' });
     } catch (error) {
         console.error('Config error:', error);
