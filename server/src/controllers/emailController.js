@@ -6,6 +6,45 @@ const fs = require("fs");
 const pdfParse = require("pdf-parse");
 const { GoogleGenAI } = require("@google/genai");
 
+const AI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const AI_FALLBACK_MODEL =
+  process.env.GEMINI_FALLBACK_MODEL || "gemini-2.5-flash-lite";
+
+const wait = (milliseconds) =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+const isTransientAiError = (error) => {
+  const status = error?.status || error?.code || error?.error?.code;
+  const message = String(error?.message || error || "");
+  return (
+    [429, 500, 502, 503, 504].includes(Number(status)) ||
+    /\b(429|500|502|503|504)\b|UNAVAILABLE|RESOURCE_EXHAUSTED/i.test(message)
+  );
+};
+
+const generateEmailContent = async (ai, prompt) => {
+  const models = [...new Set([AI_MODEL, AI_FALLBACK_MODEL])];
+  let lastError;
+
+  for (const model of models) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await ai.models.generateContent({
+          model,
+          contents: prompt,
+          config: { responseMimeType: "application/json" },
+        });
+      } catch (error) {
+        lastError = error;
+        if (!isTransientAiError(error) || attempt === 1) break;
+        await wait(1000 * (attempt + 1));
+      }
+    }
+  }
+
+  throw lastError;
+};
+
 const campaigns = new Map();
 
 exports.configureSmtp = async (req, res) => {
@@ -15,14 +54,12 @@ exports.configureSmtp = async (req, res) => {
       return res.status(400).json({ error: "Email and Password are required" });
     }
 
-    const configured = emailService.configure(email, password);
+    const configured = await emailService.configure(email, password);
     if (!configured) {
-      return res
-        .status(500)
-        .json({
-          error:
-            "SMTP configuration failed. Check the provided email and app password.",
-        });
+      return res.status(500).json({
+        error:
+          "SMTP configuration failed. Check the provided email and app password.",
+      });
     }
 
     res.json({ success: true, message: "SMTP Configured successfully" });
@@ -213,13 +250,7 @@ exports.generateEmail = async (req, res) => {
             }
         `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-      },
-    });
+    const response = await generateEmailContent(ai, prompt);
 
     const resultText = response.text;
     const result = JSON.parse(resultText);
@@ -227,8 +258,12 @@ exports.generateEmail = async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error("Error generating email:", error);
-    res
-      .status(500)
-      .json({ error: "Failed to generate email: " + error.message });
+    const status = isTransientAiError(error) ? 503 : 500;
+    res.status(status).json({
+      error:
+        status === 503
+          ? "Email generation is temporarily unavailable. Please try again shortly."
+          : "Failed to generate email.",
+    });
   }
 };

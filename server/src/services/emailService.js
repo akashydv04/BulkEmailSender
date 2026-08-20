@@ -45,7 +45,7 @@ const createTransporter = (user, pass) => {
 
 createTransporter();
 
-exports.configure = (user, pass) => {
+exports.configure = async (user, pass) => {
   if (!user || !pass) {
     return false;
   }
@@ -54,7 +54,20 @@ exports.configure = (user, pass) => {
   runtimeSmtpPass = pass;
   process.env.SMTP_USER = user;
   process.env.SMTP_PASS = pass;
-  return createTransporter(user, pass);
+  if (!createTransporter(user, pass)) {
+    return false;
+  }
+
+  try {
+    await transporter.verify();
+    return true;
+  } catch (error) {
+    transporter = null;
+    console.error("SMTP verification failed:", error.message);
+    throw new Error(
+      "SMTP authentication failed. Use a valid Gmail App Password.",
+    );
+  }
 };
 
 exports.sendEmail = async ({
