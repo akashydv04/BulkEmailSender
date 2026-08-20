@@ -1,37 +1,44 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const helmet = require("helmet");
-const compression = require("compression");
+const bodyParser = require("body-parser");
 const apiRoutes = require("./routes/api");
 
 const app = express();
 const PORT = process.env.PORT || 5001;
-const isProduction = process.env.NODE_ENV === "production";
-const configuredOrigins = (process.env.ALLOWED_ORIGIN || process.env.FRONTEND_URL || "")
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
-const allowedOrigins = isProduction
-  ? configuredOrigins
-  : [
-      "http://localhost:3000",
-      "http://127.0.0.1:3000",
-      "https://bulk-email-sender-psi.vercel.app",
-      ...configuredOrigins,
-    ];
+const frontendUrl =
+  process.env.FRONTEND_URL || "https://bulk-email-sender-psi.vercel.app";
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "https://bulk-email-sender-psi.vercel.app",
+  frontendUrl,
+].filter(Boolean);
 
 const isAllowedOrigin = (origin) => {
   if (!origin) return true;
-  return allowedOrigins.includes(origin);
+
+  try {
+    const hostname = new URL(origin).hostname;
+    return (
+      allowedOrigins.includes(origin) ||
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname.endsWith(".vercel.app")
+    );
+  } catch {
+    return false;
+  }
 };
 
 const corsOptions = {
   origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl) or from allowedOrigins
     if (isAllowedOrigin(origin)) {
       callback(null, true);
       return;
     }
+    // Explicitly fail for disallowed origins
     callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
@@ -42,45 +49,27 @@ const corsOptions = {
     "X-Requested-With",
     "Accept",
   ],
-  optionsSuccessStatus: 204,
+  optionsSuccessStatus: 204, // some legacy browsers (IE11) choke on 204
 };
 
-app.set("trust proxy", 1);
-app.disable("x-powered-by");
-app.use(
-  helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        baseUri: ["'self'"],
-        frameAncestors: ["'none'"],
-        formAction: ["'self'"],
-        objectSrc: ["'none'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:"],
-      },
-    },
-    hsts: isProduction
-      ? { maxAge: 31536000, includeSubDomains: true, preload: true }
-      : false,
-    frameguard: { action: "deny" },
-    xssFilter: true,
-  }),
-);
-app.use(compression());
+// Apply CORS to all routes
 app.use(cors(corsOptions));
+// Explicitly handle OPTIONS preflight across all routes so the Access-Control-* headers are always sent
+// Avoid using app.options('*', ...) because some path-to-regexp versions reject '*' as a route pattern on certain platforms.
+// Use a middleware to respond to OPTIONS preflight requests instead.
 app.use((req, res, next) => {
   if (req.method === "OPTIONS") {
     return cors(corsOptions)(req, res, () => res.sendStatus(204));
   }
   next();
 });
-app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
+// Disable Express ETag generation to avoid conditional 304 responses
 app.set("etag", false);
 
+// Global anti-caching headers for all /api routes to prevent browser caching
 app.use("/api", (req, res, next) => {
   res.set(
     "Cache-Control",
@@ -93,36 +82,15 @@ app.use("/api", (req, res, next) => {
 
 app.use("/api", apiRoutes);
 
-app.get("/health", (req, res) => {
-  res.status(200).json({ status: "ok", uptime: process.uptime() });
-});
-
 app.get("/", (req, res) => {
   res.send("Email Sender API is running");
 });
 
 app.use((err, req, res, next) => {
-  const status = err.status || err.statusCode || (err.code === "LIMIT_FILE_SIZE" ? 413 : 500);
-  if (!isProduction) {
-    console.error("Express Global Error:", err);
-  }
-
-  const publicMessages = {
-    400: err.message || "Invalid request",
-    401: "Unauthorized",
-    403: err.message || "Forbidden",
-    404: "Not found",
-    413: "Uploaded file is too large",
-    429: "Too many requests. Please wait and try again.",
-  };
-
-  res.status(status).json({
-    error: publicMessages[status] || "Something went wrong. Please try again later.",
-  });
+  console.error("Express Global Error:", err);
+  res.status(500).json({ error: "Server crashed: " + err.message });
 });
 
 app.listen(PORT, () => {
-  if (!isProduction) {
-    console.log(`Server is running on port ${PORT}`);
-  }
+  console.log(`Server is running on port ${PORT}`);
 });

@@ -1,24 +1,14 @@
 const emailService = require("../services/emailService");
 const queueService = require("../services/queueService");
 const helper = require("../utils/helper");
-const {
-  sanitizeEmailHtml,
-  sanitizeEmailSubject,
-  sanitizeFooter,
-  sanitizePlainText,
-  sanitizeRecipient,
-  stripHeaderControlChars,
-} = require("../utils/sanitizers");
 const { v4: uuidv4 } = require("uuid");
 const fs = require("fs");
-const fsPromises = require("fs/promises");
-const path = require("path");
 const pdfParse = require("pdf-parse");
-const mammoth = require("mammoth");
 const { GoogleGenAI } = require("@google/genai");
 const campaignStore = require("../db/campaignStore");
 
 const campaigns = new Map();
+<<<<<<< HEAD
 const MAX_RECIPIENTS = Number(process.env.MAX_CAMPAIGN_RECIPIENTS || 1000);
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -62,6 +52,8 @@ const extractResumeText = async (file) => {
   err.status = 400;
   throw err;
 };
+=======
+>>>>>>> parent of ec068ec (production level update)
 
 exports.configureSmtp = async (req, res) => {
   try {
@@ -80,7 +72,7 @@ exports.configureSmtp = async (req, res) => {
 
     res.json({ success: true, message: "SMTP Configured successfully" });
   } catch (error) {
-    logError("Config error:", error);
+    console.error("Config error:", error);
     res.status(500).json({ error: "Failed to configure SMTP" });
   }
 };
@@ -111,7 +103,7 @@ exports.parseEmails = async (req, res) => {
       previewSample: preview,
     });
   } catch (error) {
-    logError("Error parsing emails:", error);
+    console.error("Error parsing emails:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -125,15 +117,18 @@ exports.sendCampaign = async (req, res) => {
 
     let { recipients, subject, body, senderDetails, footer } = req.body;
 
-    recipients = parseJsonField(recipients, []);
-    senderDetails = parseJsonField(senderDetails, {});
-    footer = parseJsonField(footer, {});
+    // Parse JSON strings if they came from FormData
+    if (typeof recipients === "string") recipients = JSON.parse(recipients);
+    if (typeof senderDetails === "string")
+      senderDetails = JSON.parse(senderDetails);
+    if (typeof footer === "string") footer = JSON.parse(footer);
 
     const files = req.files || [];
 
     if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
       return res.status(400).json({ error: "Recipients list is empty" });
     }
+<<<<<<< HEAD
     if (recipients.length > MAX_RECIPIENTS) {
       return res
         .status(400)
@@ -141,10 +136,13 @@ exports.sendCampaign = async (req, res) => {
           error: `Campaigns are limited to ${MAX_RECIPIENTS} recipients.`,
         });
     }
+=======
+>>>>>>> parent of ec068ec (production level update)
     if (!subject || !body) {
       return res.status(400).json({ error: "Subject and Body are required" });
     }
 
+<<<<<<< HEAD
     const cleanRecipients = recipients.map(sanitizeRecipient).filter(Boolean);
     if (cleanRecipients.length === 0) {
       return res
@@ -163,15 +161,17 @@ exports.sendCampaign = async (req, res) => {
     };
     const cleanFooter = sanitizeFooter(footer);
 
+=======
+>>>>>>> parent of ec068ec (production level update)
     const campaignId = uuidv4();
     const campaignData = {
       id: campaignId,
       status: "processing",
-      total: cleanRecipients.length,
+      total: recipients.length,
       sent: 0,
       failed: 0,
       createdAt: new Date(),
-      recipients: cleanRecipients.map((r) => ({ ...r, status: "pending" })),
+      recipients: recipients.map((r) => ({ ...r, status: "pending" })),
     };
 
     campaigns.set(campaignId, campaignData);
@@ -186,11 +186,11 @@ exports.sendCampaign = async (req, res) => {
 
     queueService.addCampaignToQueue(
       campaignId,
-      cleanRecipients,
-      cleanSubject,
-      cleanBody,
-      cleanSenderDetails,
-      cleanFooter,
+      recipients,
+      subject,
+      body,
+      senderDetails,
+      footer,
       attachments,
       (update) => {
         const campaign = campaigns.get(campaignId);
@@ -221,13 +221,8 @@ exports.sendCampaign = async (req, res) => {
       statusEndpoint: `/api/campaign-status/${campaignId}`,
     });
   } catch (error) {
-    logError("Error starting campaign:", error);
-    res.status(error.status || 500).json({
-      error:
-        error.status === 400
-          ? error.message
-          : "Could not start the campaign. Please try again later.",
-    });
+    console.error("Error starting campaign:", error);
+    res.status(500).json({ error: "Internal server error: " + error.message });
   }
 };
 
@@ -256,7 +251,18 @@ exports.generateEmail = async (req, res) => {
       return res.status(400).json({ error: "No resume file provided" });
     }
 
-    const text = await extractResumeText(req.file);
+    if (
+      req.file.mimetype !== "application/pdf" &&
+      !req.file.originalname.toLowerCase().endsWith(".pdf")
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Only PDF files are supported for resume parsing." });
+    }
+
+    const dataBuffer = fs.readFileSync(req.file.path);
+    const data = await pdfParse(dataBuffer);
+    const text = data.text;
 
     if (!text || text.trim().length === 0) {
       return res
@@ -267,7 +273,7 @@ exports.generateEmail = async (req, res) => {
     if (!process.env.GEMINI_API_KEY) {
       return res
         .status(500)
-        .json({ error: "Resume generation is not configured on the server." });
+        .json({ error: "GEMINI_API_KEY is not configured on the server." });
     }
 
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -308,6 +314,7 @@ exports.generateEmail = async (req, res) => {
 
     res.json(result);
   } catch (error) {
+<<<<<<< HEAD
     logError("Error generating email:", error);
     res.status(error.status || 500).json({
       error:
@@ -319,5 +326,11 @@ exports.generateEmail = async (req, res) => {
     if (req.file?.path) {
       fs.unlink(req.file.path, () => {});
     }
+=======
+    console.error("Error generating email:", error);
+    res
+      .status(500)
+      .json({ error: "Failed to generate email: " + error.message });
+>>>>>>> parent of ec068ec (production level update)
   }
 };

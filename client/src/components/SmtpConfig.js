@@ -1,6 +1,5 @@
 "use client";
 import { useState } from "react";
-import { API_BASE_URL, fetchWithTimeout, readJsonResponse } from "../utils/api";
 
 export default function SmtpConfig({ onConfigured }) {
   // Pre-filling as per user request for easy restart, but editable
@@ -19,13 +18,18 @@ export default function SmtpConfig({ onConfigured }) {
     setLoading(true);
 
     try {
-      const res = await fetchWithTimeout(`${API_BASE_URL}/config`, {
+      const apiBaseUrl =
+        process.env.NEXT_PUBLIC_API_URL ||
+        (process.env.NODE_ENV === "production"
+          ? "https://bulkemailsender-pjpa.onrender.com/api"
+          : "http://localhost:5001/api");
+      const res = await fetch(`${apiBaseUrl}/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
-      }, 20000);
+      });
 
-      const data = await readJsonResponse(res);
+      const data = await res.json();
 
       if (res.ok) {
         onConfigured(email);
@@ -33,7 +37,8 @@ export default function SmtpConfig({ onConfigured }) {
         setError(data.error || "Failed to save configuration");
       }
     } catch (e) {
-      setError(e.message || "Failed to connect to the server.");
+      console.error(e);
+      setError("Failed to connect to server. Is backend running?");
     } finally {
       setLoading(false);
     }

@@ -1,24 +1,27 @@
 "use client";
 import { useState, useEffect } from "react";
-import { API_BASE_URL, fetchWithTimeout, readJsonResponse } from "../utils/api";
 
 export default function StatusDashboard({ campaignId, onReset }) {
   const [stats, setStats] = useState(null);
-  const [notice, setNotice] = useState(null);
 
   useEffect(() => {
     if (!campaignId) return;
 
     const fetchStatus = async () => {
       try {
-        const res = await fetchWithTimeout(`${API_BASE_URL}/campaign-status/${campaignId}`, {
+        const apiBaseUrl =
+          process.env.NEXT_PUBLIC_API_URL ||
+          (process.env.NODE_ENV === "production"
+            ? "https://bulkemailsender-pjpa.onrender.com/api"
+            : "http://localhost:5001/api");
+        const res = await fetch(`${apiBaseUrl}/campaign-status/${campaignId}`, {
           cache: "no-store",
           headers: { "Content-Type": "application/json" },
-        }, 10000);
-        const data = await readJsonResponse(res);
-        if (res.ok) setStats(data);
+        });
+        const data = await res.json();
+        setStats(data);
       } catch (e) {
-        setStats((current) => current);
+        console.error("Failed to poll status");
       }
     };
 
@@ -39,10 +42,7 @@ export default function StatusDashboard({ campaignId, onReset }) {
     const failedRecipients = stats.recipients.filter(
       (r) => r.status === "failed",
     );
-    if (failedRecipients.length === 0) {
-      setNotice("No failed recipients to export.");
-      return;
-    }
+    if (failedRecipients.length === 0) return alert("No failures to log!");
 
     let csvContent = "data:text/csv;charset=utf-8,Email,Status\n";
     failedRecipients.forEach((r) => {
@@ -69,11 +69,6 @@ export default function StatusDashboard({ campaignId, onReset }) {
       <p style={{ color: "var(--text-muted)", marginBottom: "3rem" }}>
         Your emails are being dispatched by our queue engine.
       </p>
-      {notice && (
-        <p style={{ color: "var(--text-muted)", marginBottom: "1rem" }}>
-          {notice}
-        </p>
-      )}
 
       <div
         style={{

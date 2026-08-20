@@ -1,15 +1,6 @@
 "use client";
 import { useState, useRef } from "react";
 import * as XLSX from "xlsx";
-import { API_BASE_URL, fetchWithTimeout, readJsonResponse } from "../utils/api";
-
-const RECIPIENT_FILE_MAX_BYTES = 5 * 1024 * 1024;
-const RECIPIENT_FILE_EXTENSIONS = [".xlsx", ".xls", ".csv"];
-
-function getFileExtension(fileName = "") {
-  const dotIndex = fileName.lastIndexOf(".");
-  return dotIndex >= 0 ? fileName.slice(dotIndex).toLowerCase() : "";
-}
 
 export default function EmailParser({ onParsed }) {
   const [input, setInput] = useState("");
@@ -41,24 +32,19 @@ export default function EmailParser({ onParsed }) {
   const handleParsed = (result) => {
     if (typeof onParsed === "function") {
       onParsed(result);
+    } else {
+      console.error(
+        "[EmailParser] onParsed prop is missing or not a function. " +
+          "Make sure you pass onParsed={handleParsed} to <EmailParser />. " +
+          "Parsed result:",
+        result,
+      );
     }
   };
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
-    const ext = getFileExtension(file.name);
-    if (!RECIPIENT_FILE_EXTENSIONS.includes(ext)) {
-      setError("Please upload a CSV or Excel file.");
-      e.target.value = "";
-      return;
-    }
-    if (file.size > RECIPIENT_FILE_MAX_BYTES) {
-      setError("Recipient files must be 5 MB or less.");
-      e.target.value = "";
-      return;
-    }
 
     setLoading(true);
     setError(null);
@@ -84,6 +70,8 @@ export default function EmailParser({ onParsed }) {
         }
 
         const headers = Object.keys(data[0]);
+        console.log("Detected headers:", headers);
+
         const normalizeHeader = (str) =>
           str
             ?.toString()
@@ -171,6 +159,7 @@ export default function EmailParser({ onParsed }) {
           previewSample: preview,
         });
       } catch (err) {
+        console.error(err);
         setError(
           err.message ||
             "Failed to parse the file. Please ensure it is a valid Excel or CSV.",
@@ -196,13 +185,18 @@ export default function EmailParser({ onParsed }) {
     setError(null);
 
     try {
-      const res = await fetchWithTimeout(`${API_BASE_URL}/parse-emails`, {
+      const apiBaseUrl =
+        process.env.NEXT_PUBLIC_API_URL ||
+        (process.env.NODE_ENV === "production"
+          ? "https://bulkemailsender-pjpa.onrender.com/api"
+          : "http://localhost:5001/api");
+      const res = await fetch(`${apiBaseUrl}/parse-emails`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rawEmails: input }),
-      }, 30000);
+      });
 
-      const data = await readJsonResponse(res);
+      const data = await res.json();
 
       if (res.ok) {
         handleParsed(data);
@@ -210,7 +204,7 @@ export default function EmailParser({ onParsed }) {
         setError(data.error || "Failed to parse");
       }
     } catch (err) {
-      setError(err.message || "Connection error. Please try again.");
+      setError("Connection error. Is the backend running?");
     } finally {
       setLoading(false);
     }

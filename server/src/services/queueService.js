@@ -1,17 +1,9 @@
 const emailService = require("./emailService");
 const sanitizeHtml = require("sanitize-html");
-const {
-  htmlOptions,
-  sanitizeEmailSubject,
-  stripHeaderControlChars,
-} = require("../utils/sanitizers");
 
-const MAX_RETRIES = Number(process.env.EMAIL_MAX_RETRIES || 3);
-const RATE_LIMIT_DELAY = Number(process.env.EMAIL_SEND_DELAY_MS || 2000);
-const SMTP_TIMEOUT_MS = Number(process.env.SMTP_SEND_TIMEOUT_MS || 15000);
-const BATCH_SIZE = Math.max(1, Number(process.env.EMAIL_BATCH_SIZE || 10));
-const BATCH_PAUSE_MS = Number(process.env.EMAIL_BATCH_PAUSE_MS || 5000);
-const isProduction = process.env.NODE_ENV === "production";
+const MAX_RETRIES = 3;
+const RATE_LIMIT_DELAY = 2000;
+const SMTP_TIMEOUT_MS = 15000;
 
 exports.addCampaignToQueue = async (
   campaignId,
@@ -143,36 +135,72 @@ async function processCampaign(
 ) {
   const footerHtml = generateFooterHtml(footer);
 
-  for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
-    const batch = recipients.slice(i, i + BATCH_SIZE);
+  for (const recipient of recipients) {
+    const isExcel = !!recipient.subject && !!recipient.body;
+    const baseSubject = isExcel ? recipient.subject : subject;
+    const baseBody = isExcel ? recipient.body : bodyTemplate;
 
-    for (const recipient of batch) {
-      const isExcel = !!recipient.subject && !!recipient.body;
-      const baseSubject = isExcel ? recipient.subject : subject;
-      const baseBody = isExcel ? recipient.body : bodyTemplate;
+    // Replace placeholders dynamically
+    const personalizedSubjectRaw = replacePlaceholders(baseSubject, recipient);
+    const personalizedSubject =
+      personalizedSubjectRaw.length > 200
+        ? personalizedSubjectRaw.substring(0, 197) + "..."
+        : personalizedSubjectRaw;
 
-      // Replace placeholders dynamically
-      const personalizedSubjectRaw = replacePlaceholders(baseSubject, recipient);
-      const personalizedSubject = sanitizeEmailSubject(
-        personalizedSubjectRaw.length > 200
-          ? personalizedSubjectRaw.substring(0, 197) + "..."
-          : personalizedSubjectRaw,
-      );
+    let personalizedBodyRaw = replacePlaceholders(baseBody, recipient);
 
-      let personalizedBodyRaw = replacePlaceholders(baseBody, recipient);
+    let finalBodyText, footerIncluded;
+    if (isExcel) {
+      const { cleanText, hasSignature } = formatBody(personalizedBodyRaw);
+      finalBodyText = sanitizeHtml(cleanText, {
+        allowedTags: sanitizeHtml.defaults.allowedTags.concat([
+          "img",
+          "h1",
+          "h2",
+          "span",
+          "strong",
+          "em",
+          "p",
+          "br",
+          "div",
+          "ul",
+          "li",
+          "ol",
+        ]),
+        allowedAttributes: {
+          "*": ["style", "class"],
+          a: ["href", "target"],
+          img: ["src"],
+        },
+      });
+      footerIncluded = !hasSignature;
+    } else {
+      finalBodyText = sanitizeHtml(personalizedBodyRaw, {
+        allowedTags: sanitizeHtml.defaults.allowedTags.concat([
+          "img",
+          "h1",
+          "h2",
+          "span",
+          "strong",
+          "em",
+          "p",
+          "br",
+          "div",
+          "ul",
+          "li",
+          "ol",
+        ]),
+        allowedAttributes: {
+          "*": ["style", "class"],
+          a: ["href", "target"],
+          img: ["src"],
+        },
+      });
+      footerIncluded = true;
+    }
 
-      let finalBodyText, footerIncluded;
-      if (isExcel) {
-        const { cleanText, hasSignature } = formatBody(personalizedBodyRaw);
-        finalBodyText = sanitizeHtml(cleanText, htmlOptions);
-        footerIncluded = !hasSignature;
-      } else {
-        finalBodyText = sanitizeHtml(personalizedBodyRaw, htmlOptions);
-        footerIncluded = true;
-      }
-
-      // Composition
-      const fullHtml = `
+    // Composition
+    const fullHtml = `
       <!DOCTYPE html>
       <html>
       <body style="font-family: Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6;">
@@ -187,55 +215,48 @@ async function processCampaign(
       </html>
     `;
 
-      let attempts = 0;
-      let sent = false;
+    let attempts = 0;
+    let sent = false;
 
-      while (attempts < MAX_RETRIES && !sent) {
-        try {
-          const result = await sendWithTimeout({
-            to: recipient.email,
-            subject: personalizedSubject,
-            html: fullHtml,
-            fromName: footer.name || senderDetails.name,
-            fromEmail: senderDetails.email,
-            attachments: attachments,
-          });
+    while (attempts < MAX_RETRIES && !sent) {
+      try {
+        const result = await sendWithTimeout({
+          to: recipient.email,
+          subject: personalizedSubject,
+          html: fullHtml,
+          fromName: footer.name || senderDetails.name,
+          fromEmail: senderDetails.email,
+          attachments: attachments,
+        });
 
-          if (result.success) {
-            sent = true;
-            statusCallback({ type: "sent", email: recipient.email });
-          } else {
-            attempts++;
-            if (attempts >= MAX_RETRIES) {
-              statusCallback({ type: "failed", email: recipient.email });
-            } else {
-              await new Promise((resolve) =>
-                setTimeout(resolve, 2000 * attempts),
-              );
-            }
-          }
-        } catch (error) {
-          if (!isProduction) {
-            console.error(
-              `SMTP timeout or error for ${stripHeaderControlChars(recipient.email)}:`,
-              error.message,
-            );
-          }
+        if (result.success) {
+          sent = true;
+          statusCallback({ type: "sent", email: recipient.email });
+        } else {
           attempts++;
           if (attempts >= MAX_RETRIES) {
             statusCallback({ type: "failed", email: recipient.email });
           } else {
-            await new Promise((resolve) => setTimeout(resolve, 2000 * attempts));
+            await new Promise((resolve) =>
+              setTimeout(resolve, 2000 * attempts),
+            );
           }
         }
+      } catch (error) {
+        console.error(
+          `SMTP timeout or error for ${recipient.email}:`,
+          error.message,
+        );
+        attempts++;
+        if (attempts >= MAX_RETRIES) {
+          statusCallback({ type: "failed", email: recipient.email });
+        } else {
+          await new Promise((resolve) => setTimeout(resolve, 2000 * attempts));
+        }
       }
-
-      await new Promise((resolve) => setTimeout(resolve, RATE_LIMIT_DELAY));
     }
 
-    if (i + BATCH_SIZE < recipients.length) {
-      await new Promise((resolve) => setTimeout(resolve, BATCH_PAUSE_MS));
-    }
+    await new Promise((resolve) => setTimeout(resolve, RATE_LIMIT_DELAY));
   }
 
   statusCallback({ type: "completed" });
