@@ -23,14 +23,7 @@ const allowedOrigins = isProduction
 
 const isAllowedOrigin = (origin) => {
   if (!origin) return true;
-
-  if (allowedOrigins.includes(origin)) return true;
-
-  try {
-    return new URL(origin).hostname.endsWith(".vercel.app");
-  } catch {
-    return false;
-  }
+  return allowedOrigins.includes(origin);
 };
 
 const corsOptions = {
