@@ -56,7 +56,9 @@ const extractResumeText = async (file) => {
     const result = await mammoth.extractRawText({ path: file.path });
     return result.value;
   }
-  const err = new Error("DOC resume parsing is not supported. Please upload PDF or DOCX.");
+  const err = new Error(
+    "DOC resume parsing is not supported. Please upload PDF or DOCX.",
+  );
   err.status = 400;
   throw err;
 };
@@ -70,12 +72,10 @@ exports.configureSmtp = async (req, res) => {
 
     const configured = emailService.configure(email, password);
     if (!configured) {
-      return res
-        .status(500)
-        .json({
-          error:
-            "SMTP configuration failed. Check the provided email and app password.",
-        });
+      return res.status(500).json({
+        error:
+          "SMTP configuration failed. Check the provided email and app password.",
+      });
     }
 
     res.json({ success: true, message: "SMTP Configured successfully" });
@@ -137,7 +137,9 @@ exports.sendCampaign = async (req, res) => {
     if (recipients.length > MAX_RECIPIENTS) {
       return res
         .status(400)
-        .json({ error: `Campaigns are limited to ${MAX_RECIPIENTS} recipients.` });
+        .json({
+          error: `Campaigns are limited to ${MAX_RECIPIENTS} recipients.`,
+        });
     }
     if (!subject || !body) {
       return res.status(400).json({ error: "Subject and Body are required" });
@@ -145,7 +147,9 @@ exports.sendCampaign = async (req, res) => {
 
     const cleanRecipients = recipients.map(sanitizeRecipient).filter(Boolean);
     if (cleanRecipients.length === 0) {
-      return res.status(400).json({ error: "No valid recipient emails found." });
+      return res
+        .status(400)
+        .json({ error: "No valid recipient emails found." });
     }
 
     const cleanSubject = sanitizeEmailSubject(subject);
@@ -234,7 +238,7 @@ exports.getCampaignStatus = async (req, res) => {
       return res.status(404).json({ error: "Campaign not found" });
     }
 
-    const campaign = campaigns.get(id) || await campaignStore.get(id);
+    const campaign = campaigns.get(id) || (await campaignStore.get(id));
     if (!campaign) {
       return res.status(404).json({ error: "Campaign not found" });
     }
@@ -305,14 +309,12 @@ exports.generateEmail = async (req, res) => {
     res.json(result);
   } catch (error) {
     logError("Error generating email:", error);
-    res
-      .status(error.status || 500)
-      .json({
-        error:
-          error.status === 400
-            ? error.message
-            : "Failed to generate email. Please try again later.",
-      });
+    res.status(error.status || 500).json({
+      error:
+        error.status === 400
+          ? error.message
+          : "Failed to generate email. Please try again later.",
+    });
   } finally {
     if (req.file?.path) {
       fs.unlink(req.file.path, () => {});
