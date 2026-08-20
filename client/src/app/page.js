@@ -4,6 +4,7 @@ import SmtpConfig from "../components/SmtpConfig";
 import EmailParser from "../components/EmailParser";
 import EmailComposer from "../components/EmailComposer";
 import StatusDashboard from "../components/StatusDashboard";
+import { API_BASE_URL, fetchWithTimeout, readJsonResponse } from "../utils/api";
 
 export default function Home() {
   const [step, setStep] = useState(0);
@@ -39,22 +40,17 @@ export default function Home() {
       });
     }
 
-    const apiBaseUrl =
-      process.env.NEXT_PUBLIC_API_URL ||
-      (process.env.NODE_ENV === "production"
-        ? "https://bulkemailsender-pjpa.onrender.com/api"
-        : "http://localhost:5001/api");
-    const res = await fetch(`${apiBaseUrl}/send-campaign`, {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/send-campaign`, {
       method: "POST",
-      body: formData, // No Content-Type header; fetch sets it with boundary
-    });
+      body: formData,
+    }, 45000);
 
     if (res.ok) {
-      const data = await res.json();
+      const data = await readJsonResponse(res);
       setCampaignId(data.campaignId);
       setStep(3);
     } else {
-      const err = await res.json();
+      const err = await readJsonResponse(res);
       throw new Error(err.error || "Failed to start campaign");
     }
   };

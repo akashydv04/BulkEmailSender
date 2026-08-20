@@ -1,6 +1,5 @@
 const validator = require('validator');
 const crypto = require('crypto');
-const axios = require('axios');
 
 // Heuristic Name Extraction
 function extractNameFromEmail(email) {
@@ -41,9 +40,11 @@ async function fetchGravatarProfile(email) {
         const hash = crypto.createHash('md5').update(email.trim().toLowerCase()).digest('hex');
         const url = `https://www.gravatar.com/${hash}.json`;
 
-        const res = await axios.get(url, { timeout: 2000 }); // Fast timeout
-        if (res.data && res.data.entry && res.data.entry[0]) {
-            const entry = res.data.entry[0];
+        const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (data && data.entry && data.entry[0]) {
+            const entry = data.entry[0];
             // Try display name, then name object
             if (entry.displayName) return entry.displayName;
             if (entry.name && (entry.name.givenName || entry.name.familyName)) {

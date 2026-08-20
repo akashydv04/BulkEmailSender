@@ -2,6 +2,13 @@
 import { useState, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
 import "react-quill-new/dist/quill.snow.css";
+import {
+  API_BASE_URL,
+  fetchWithTimeout,
+  readJsonResponse,
+  sanitizePreviewHtml,
+  validateDocumentFile,
+} from "../utils/api";
 
 // Dynamic import for React Quill to avoid SSR issues
 const ReactQuill = dynamic(() => import("react-quill-new"), { ssr: false });
@@ -45,35 +52,35 @@ export default function EmailComposer({ parsedData, onSend }) {
   );
   const [isSending, setIsSending] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [feedback, setFeedback] = useState(null);
   const resumeInputRef = useRef(null);
 
   const handleResumeUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (
-      file.type !== "application/pdf" &&
-      !file.name.toLowerCase().endsWith(".pdf")
-    ) {
-      return alert("Please upload a PDF file.");
+    const validationError = validateDocumentFile(file);
+    if (validationError) {
+      setFeedback({ type: "error", message: validationError });
+      e.target.value = "";
+      return;
     }
 
     setIsGenerating(true);
+    setFeedback({
+      type: "info",
+      message: "Scanning your resume. This can take a moment on a cold server.",
+    });
     const formData = new FormData();
     formData.append("resume", file);
 
     try {
-      const apiUrl =
-        process.env.NEXT_PUBLIC_API_URL ||
-        (process.env.NODE_ENV === "production"
-          ? "https://bulkemailsender-pjpa.onrender.com/api"
-          : "http://localhost:5001/api");
-      const res = await fetch(`${apiUrl}/generate-email`, {
+      const res = await fetchWithTimeout(`${API_BASE_URL}/emails/parse-resume`, {
         method: "POST",
         body: formData,
-      });
+      }, 60000);
 
-      const data = await res.json();
+      const data = await readJsonResponse(res);
       if (!res.ok) throw new Error(data.error || "Failed to generate email");
 
       if (data.subject) setSubject(data.subject);
@@ -82,11 +89,15 @@ export default function EmailComposer({ parsedData, onSend }) {
       if (data.designation) {
         setFooter((prev) => ({ ...prev, designation: data.designation }));
       }
+      setFeedback({ type: "success", message: "Email draft generated successfully." });
     } catch (error) {
-      alert("Error generating email: " + error.message);
+      setFeedback({
+        type: "error",
+        message: error.message || "Could not generate the email draft.",
+      });
     } finally {
       setIsGenerating(false);
-      e.target.value = ""; // Reset input
+      e.target.value = "";
     }
   };
   // If the data already has native body/subject
@@ -126,10 +137,24 @@ export default function EmailComposer({ parsedData, onSend }) {
   const previewBody = isExcelConfigured
     ? formatBody(replacePlaceholders(previewRecipient.body, previewRecipient))
     : replacePlaceholders(body, previewRecipient);
+  const safePreviewBody = sanitizePreviewHtml(previewBody);
 
   const handleFileChange = (e) => {
     if (e.target.files) {
-      setFiles((prev) => [...prev, ...Array.from(e.target.files)]);
+      const incoming = Array.from(e.target.files);
+      const firstError = incoming
+        .map((file) => validateDocumentFile(file))
+        .find(Boolean);
+
+      if (firstError) {
+        setFeedback({ type: "error", message: firstError });
+        e.target.value = "";
+        return;
+      }
+
+      setFiles((prev) => [...prev, ...incoming]);
+      setFeedback(null);
+      e.target.value = "";
     }
   };
 
@@ -138,9 +163,15 @@ export default function EmailComposer({ parsedData, onSend }) {
   };
 
   const handleSend = async () => {
+    if (isSending || isGenerating) return;
     if (!isExcelConfigured && (!subject || !body))
-      return alert("Please fill in all fields");
+      return setFeedback({ type: "error", message: "Please fill in all fields." });
+
     setIsSending(true);
+    setFeedback({
+      type: "info",
+      message: "Starting the campaign. Please keep this tab open for status.",
+    });
     try {
       await onSend({
         recipients: parsedData.validEmails,
@@ -157,7 +188,10 @@ export default function EmailComposer({ parsedData, onSend }) {
         files,
       });
     } catch (e) {
-      alert("Error sending: " + e.message);
+      setFeedback({
+        type: "error",
+        message: e.message || "Could not start the campaign. Please try again.",
+      });
       setIsSending(false);
     }
   };
@@ -311,9 +345,9 @@ export default function EmailComposer({ parsedData, onSend }) {
                     <button
                       className="btn btn-secondary"
                       onClick={() => resumeInputRef.current?.click()}
-                      disabled={isGenerating}
+                      disabled={isGenerating || isSending}
                     >
-                      {isGenerating ? "Scanning Resume..." : "📄 Upload Resume"}
+                      {isGenerating ? "Scanning Resume..." : "Upload Resume"}
                     </button>
                     {isGenerating && (
                       <div
@@ -370,7 +404,7 @@ export default function EmailComposer({ parsedData, onSend }) {
                     )}
                     <input
                       type="file"
-                      accept="application/pdf"
+                      accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                       ref={resumeInputRef}
                       style={{ display: "none" }}
                       onChange={handleResumeUpload}
@@ -424,8 +458,8 @@ export default function EmailComposer({ parsedData, onSend }) {
                 <span style={{ color: "var(--primary)", fontWeight: 600 }}>
                   Click to Upload
                 </span>
-                <p style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-                  PDF, DOCX, PNG, ZIP (Max 25MB)
+                  <p style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                  PDF, DOC, DOCX (Max 5 MB each)
                 </p>
                 <input
                   type="file"
@@ -479,6 +513,34 @@ export default function EmailComposer({ parsedData, onSend }) {
               )}
             </div>
           </div>
+
+          {feedback && (
+            <div
+              style={{
+                padding: "0.85rem 1rem",
+                borderRadius: "8px",
+                border:
+                  feedback.type === "error"
+                    ? "1px solid rgba(220, 38, 38, 0.25)"
+                    : "1px solid rgba(37, 99, 235, 0.25)",
+                background:
+                  feedback.type === "error"
+                    ? "#fef2f2"
+                    : feedback.type === "success"
+                      ? "#f0fdf4"
+                      : "#eff6ff",
+                color:
+                  feedback.type === "error"
+                    ? "var(--error)"
+                    : feedback.type === "success"
+                      ? "var(--success)"
+                      : "var(--primary)",
+                fontSize: "0.9rem",
+              }}
+            >
+              {feedback.message}
+            </div>
+          )}
 
           <div className="card">
             <div
@@ -608,9 +670,9 @@ export default function EmailComposer({ parsedData, onSend }) {
             <button
               className="btn btn-primary"
               onClick={handleSend}
-              disabled={isSending}
+              disabled={isSending || isGenerating}
             >
-              {isSending ? "Sending..." : "🚀 Launch Campaign"}
+              {isSending ? "Sending..." : "Launch Campaign"}
             </button>
           </div>
         </div>
@@ -715,7 +777,7 @@ export default function EmailComposer({ parsedData, onSend }) {
                 <div
                   className="email-body-content"
                   style={{ margin: "1rem 0" }}
-                  dangerouslySetInnerHTML={{ __html: previewBody }}
+                  dangerouslySetInnerHTML={{ __html: safePreviewBody }}
                 ></div>
 
                 {files.length > 0 && (
