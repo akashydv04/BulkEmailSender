@@ -7,8 +7,7 @@ const apiRoutes = require("./routes/api");
 const app = express();
 const PORT = process.env.PORT || 5001;
 const frontendUrl =
-  process.env.FRONTEND_URL ||
-  "https://bulk-email-sender-psi.vercel.app";
+  process.env.FRONTEND_URL || "https://bulk-email-sender-psi.vercel.app";
 const allowedOrigins = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
@@ -44,8 +43,13 @@ const corsOptions = {
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
-  optionsSuccessStatus: 204 // some legacy browsers (IE11) choke on 204
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+    "Accept",
+  ],
+  optionsSuccessStatus: 204, // some legacy browsers (IE11) choke on 204
 };
 
 // Apply CORS to all routes
@@ -54,7 +58,7 @@ app.use(cors(corsOptions));
 // Avoid using app.options('*', ...) because some path-to-regexp versions reject '*' as a route pattern on certain platforms.
 // Use a middleware to respond to OPTIONS preflight requests instead.
 app.use((req, res, next) => {
-  if (req.method === 'OPTIONS') {
+  if (req.method === "OPTIONS") {
     return cors(corsOptions)(req, res, () => res.sendStatus(204));
   }
   next();
