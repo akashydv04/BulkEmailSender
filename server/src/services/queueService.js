@@ -136,11 +136,13 @@ async function processCampaign(
   recipients,
   subject,
   bodyTemplate,
-  senderDetails,
-  footer,
+  senderDetails = {},
+  footer = {},
   attachments,
   statusCallback,
 ) {
+  senderDetails = senderDetails || {};
+  footer = footer || {};
   const footerHtml = generateFooterHtml(footer);
 
   for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
@@ -196,8 +198,8 @@ async function processCampaign(
             to: recipient.email,
             subject: personalizedSubject,
             html: fullHtml,
-            fromName: footer.name || senderDetails.name,
-            fromEmail: senderDetails.email,
+            fromName: footer.name || senderDetails.name || "Sender",
+            fromEmail: senderDetails.email || "",
             attachments: attachments,
           });
 
