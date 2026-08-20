@@ -27,8 +27,10 @@ git push origin feature/dynamic-resume-emails
    - Start command: `npm start`
 6. Add environment variables:
    - `PORT=5001`
-   - `FRONTEND_URL=https://your-frontend-url.vercel.app`
+   - `FRONTEND_URL=https://your-frontend-url.vercel.app` (the backend also accepts Vercel preview URLs)
    - `GEMINI_API_KEY=your_google_api_key_if_using_resume_generation`
+   - `DATABASE_URL=<your Render PostgreSQL connection string>` (recommended for campaign status persistence)
+   - `DATABASE_SSL=true`
 7. Click Create Web Service.
 8. Copy the backend URL after deployment.
 

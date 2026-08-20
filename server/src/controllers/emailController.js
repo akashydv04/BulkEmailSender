@@ -16,6 +16,7 @@ const path = require("path");
 const pdfParse = require("pdf-parse");
 const mammoth = require("mammoth");
 const { GoogleGenAI } = require("@google/genai");
+const campaignStore = require("../db/campaignStore");
 
 const campaigns = new Map();
 const MAX_RECIPIENTS = Number(process.env.MAX_CAMPAIGN_RECIPIENTS || 1000);
@@ -25,6 +26,12 @@ const logError = (message, error) => {
   if (!isProduction) {
     console.error(message, error);
   }
+};
+
+const persistCampaign = (campaign) => {
+  campaignStore.save(campaign).catch((error) => {
+    logError("Campaign persistence error:", error);
+  });
 };
 
 const parseJsonField = (value, fallback) => {
@@ -164,6 +171,7 @@ exports.sendCampaign = async (req, res) => {
     };
 
     campaigns.set(campaignId, campaignData);
+    persistCampaign(campaignData);
 
     // Normalize Attachments for Queue
     const attachments = files.map((f) => ({
@@ -198,6 +206,7 @@ exports.sendCampaign = async (req, res) => {
           } else if (update.type === "completed") {
             campaign.status = "completed";
           }
+          persistCampaign(campaign);
         }
       },
     );
@@ -219,12 +228,22 @@ exports.sendCampaign = async (req, res) => {
 };
 
 exports.getCampaignStatus = async (req, res) => {
-  const { id } = req.params;
-  const campaign = campaigns.get(id);
-  if (!campaign) {
+  try {
+    const { id } = req.params;
+    if (!/^[0-9a-f-]{36}$/i.test(id || "")) {
+      return res.status(404).json({ error: "Campaign not found" });
+    }
+
+    const campaign = campaigns.get(id) || await campaignStore.get(id);
+    if (!campaign) {
+      return res.status(404).json({ error: "Campaign not found" });
+    }
+    campaigns.set(id, campaign);
+    return res.status(200).json(campaign);
+  } catch (error) {
+    logError("Campaign status error:", error);
     return res.status(404).json({ error: "Campaign not found" });
   }
-  res.json(campaign);
 };
 
 exports.generateEmail = async (req, res) => {
