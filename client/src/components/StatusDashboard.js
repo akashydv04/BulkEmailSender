@@ -14,7 +14,10 @@ export default function StatusDashboard({ campaignId, onReset }) {
           (process.env.NODE_ENV === "production"
             ? "https://bulkemailsender-pjpa.onrender.com/api"
             : "http://localhost:5001/api");
-        const res = await fetch(`${apiBaseUrl}/campaign-status/${campaignId}`);
+        const res = await fetch(`${apiBaseUrl}/campaign-status/${campaignId}`, {
+          cache: "no-store",
+          headers: { "Content-Type": "application/json" },
+        });
         const data = await res.json();
         setStats(data);
       } catch (e) {
