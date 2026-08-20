@@ -37,7 +37,9 @@ export async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
     if (error.name === "AbortError") {
       throw new Error("The request timed out. Please try again in a moment.");
     }
-    throw new Error("Network error. Please check your connection and try again.");
+    throw new Error(
+      "Network error. Please check that the backend is running, NEXT_PUBLIC_API_URL is correct, and your frontend domain is allowed by CORS.",
+    );
   } finally {
     clearTimeout(timeoutId);
   }
