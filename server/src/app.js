@@ -8,11 +8,7 @@ const apiRoutes = require("./routes/api");
 const app = express();
 const PORT = process.env.PORT || 5001;
 const isProduction = process.env.NODE_ENV === "production";
-const configuredOrigins = (
-  process.env.ALLOWED_ORIGIN ||
-  process.env.FRONTEND_URL ||
-  ""
-)
+const configuredOrigins = (process.env.ALLOWED_ORIGIN || process.env.FRONTEND_URL || "")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
@@ -113,10 +109,7 @@ app.get("/", (req, res) => {
 });
 
 app.use((err, req, res, next) => {
-  const status =
-    err.status ||
-    err.statusCode ||
-    (err.code === "LIMIT_FILE_SIZE" ? 413 : 500);
+  const status = err.status || err.statusCode || (err.code === "LIMIT_FILE_SIZE" ? 413 : 500);
   if (!isProduction) {
     console.error("Express Global Error:", err);
   }
@@ -131,8 +124,7 @@ app.use((err, req, res, next) => {
   };
 
   res.status(status).json({
-    error:
-      publicMessages[status] || "Something went wrong. Please try again later.",
+    error: publicMessages[status] || "Something went wrong. Please try again later.",
   });
 });
 
