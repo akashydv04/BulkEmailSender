@@ -1,58 +1,79 @@
-const emailService = require('./emailService');
-const sanitizeHtml = require('sanitize-html');
+const emailService = require("./emailService");
+const sanitizeHtml = require("sanitize-html");
 
 const MAX_RETRIES = 3;
 const RATE_LIMIT_DELAY = 2000;
 const SMTP_TIMEOUT_MS = 15000;
 
-exports.addCampaignToQueue = async (campaignId, recipients, subject, bodyTemplate, senderDetails, footer, attachments, statusCallback) => {
-    processCampaign(recipients, subject, bodyTemplate, senderDetails, footer, attachments, statusCallback);
+exports.addCampaignToQueue = async (
+  campaignId,
+  recipients,
+  subject,
+  bodyTemplate,
+  senderDetails,
+  footer,
+  attachments,
+  statusCallback,
+) => {
+  processCampaign(
+    recipients,
+    subject,
+    bodyTemplate,
+    senderDetails,
+    footer,
+    attachments,
+    statusCallback,
+  );
 };
 
 async function sendWithTimeout(payload) {
-    return Promise.race([
-        emailService.sendEmail(payload),
-        new Promise((_, reject) => {
-            setTimeout(() => reject(new Error(`SMTP send timed out after ${SMTP_TIMEOUT_MS}ms`)), SMTP_TIMEOUT_MS);
-        })
-    ]);
+  return Promise.race([
+    emailService.sendEmail(payload),
+    new Promise((_, reject) => {
+      setTimeout(
+        () =>
+          reject(new Error(`SMTP send timed out after ${SMTP_TIMEOUT_MS}ms`)),
+        SMTP_TIMEOUT_MS,
+      );
+    }),
+  ]);
 }
-
 
 // --- Footer Generation Logic ---
 function generateFooterHtml(footer) {
-    // Strict Sanitization to match Frontend Preview
-    const sanitize = (val) => val && val.trim().length > 0 ? val.trim() : null;
+  // Strict Sanitization to match Frontend Preview
+  const sanitize = (val) => (val && val.trim().length > 0 ? val.trim() : null);
 
-    const name = sanitize(footer.name);
-    // Collect optional lines
-    const lines = [
-        name ? `<strong>${name}</strong>` : null,
-        sanitize(footer.designation),
-        sanitize(footer.company),
-        sanitize(footer.contact)
-    ].filter(Boolean); // Discard empty/null
+  const name = sanitize(footer.name);
+  // Collect optional lines
+  const lines = [
+    name ? `<strong>${name}</strong>` : null,
+    sanitize(footer.designation),
+    sanitize(footer.company),
+    sanitize(footer.contact),
+  ].filter(Boolean); // Discard empty/null
 
-    // If entire footer is empty and no disclaimer, return empty string
-    if (lines.length === 0 && !footer.disclaimer) {
-        return '';
-    }
+  // If entire footer is empty and no disclaimer, return empty string
+  if (lines.length === 0 && !footer.disclaimer) {
+    return "";
+  }
 
-    // Join lines with simple breaks
-    const signatureBlock = lines.length > 0
-        ? `<div style="margin-bottom: 12px;">
+  // Join lines with simple breaks
+  const signatureBlock =
+    lines.length > 0
+      ? `<div style="margin-bottom: 12px;">
          <p style="margin: 0 0 4px 0;">Best regards,</p>
-         ${lines.map(line => `<div style="margin: 0;">${line}</div>`).join('')}
+         ${lines.map((line) => `<div style="margin: 0;">${line}</div>`).join("")}
        </div>`
-        : '';
+      : "";
 
-    const disclaimerBlock = footer.disclaimer
-        ? `<p style="font-style: italic; font-size: 11px; color: #999; margin-top: 12px; line-height: 1.4;">
+  const disclaimerBlock = footer.disclaimer
+    ? `<p style="font-style: italic; font-size: 11px; color: #999; margin-top: 12px; line-height: 1.4;">
          This email is confidential and intended solely for the recipient.
        </p>`
-        : '';
+    : "";
 
-    return `
+  return `
     <footer style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; font-size: 13px; color: #555; font-family: Arial, sans-serif;">
       ${signatureBlock}
       ${disclaimerBlock}
@@ -61,86 +82,125 @@ function generateFooterHtml(footer) {
 }
 
 function replacePlaceholders(text, rowData) {
-    if (!text) return text;
-    return text.replace(/\{([^}]+)\}/g, (match, key) => {
-        const lowerKey = key.trim().toLowerCase();
-        
-        // Find matching key in rowData ignoring case
-        const actualKey = Object.keys(rowData).find(k => k.toLowerCase() === lowerKey);
-        if (actualKey && rowData[actualKey]) {
-            return rowData[actualKey];
-        }
+  if (!text) return text;
+  return text.replace(/\{([^}]+)\}/g, (match, key) => {
+    const lowerKey = key.trim().toLowerCase();
 
-        // Fallbacks
-        if (lowerKey === 'name') return 'Hiring Team';
-        if (lowerKey === 'company') return 'your company';
-        if (lowerKey === 'role') return 'the open role';
+    // Find matching key in rowData ignoring case
+    const actualKey = Object.keys(rowData).find(
+      (k) => k.toLowerCase() === lowerKey,
+    );
+    if (actualKey && rowData[actualKey]) {
+      return rowData[actualKey];
+    }
 
-        return ''; // Or return empty string for other custom fields
-    });
+    // Fallbacks
+    if (lowerKey === "name") return "Hiring Team";
+    if (lowerKey === "company") return "your company";
+    if (lowerKey === "role") return "the open role";
+
+    return ""; // Or return empty string for other custom fields
+  });
 }
 
 function formatBody(rawBody) {
-    if (!rawBody) return { cleanText: '', hasSignature: false };
-    let clean = rawBody.trim();
-    // Reduce multiple blank lines
-    clean = clean.replace(/\n\s*\n\s*\n/g, '\n\n');
-    const hasGreeting = /^(dear|hi|hello)\s/i.test(clean);
-    
-    let finalBody = clean;
-    if (!hasGreeting) {
-        finalBody = `Dear Hiring Team,\n\n${clean}`;
-    }
-    
-    // Check if body has signature
-    const hasSignature = /(best regards|sincerely|thanks|cheers)[,\s]*\n/i.test(clean) || /akash yadav/i.test(clean);
-    
-    // Convert newlines to breaks
-    return { cleanText: finalBody.replace(/\n/g, '<br/>'), hasSignature };
+  if (!rawBody) return { cleanText: "", hasSignature: false };
+  let clean = rawBody.trim();
+  // Reduce multiple blank lines
+  clean = clean.replace(/\n\s*\n\s*\n/g, "\n\n");
+  const hasGreeting = /^(dear|hi|hello)\s/i.test(clean);
+
+  let finalBody = clean;
+  if (!hasGreeting) {
+    finalBody = `Dear Hiring Team,\n\n${clean}`;
+  }
+
+  // Check if body has signature
+  const hasSignature =
+    /(best regards|sincerely|thanks|cheers)[,\s]*\n/i.test(clean) ||
+    /akash yadav/i.test(clean);
+
+  // Convert newlines to breaks
+  return { cleanText: finalBody.replace(/\n/g, "<br/>"), hasSignature };
 }
 
-async function processCampaign(recipients, subject, bodyTemplate, senderDetails, footer, attachments, statusCallback) {
-    const footerHtml = generateFooterHtml(footer);
+async function processCampaign(
+  recipients,
+  subject,
+  bodyTemplate,
+  senderDetails,
+  footer,
+  attachments,
+  statusCallback,
+) {
+  const footerHtml = generateFooterHtml(footer);
 
-    for (const recipient of recipients) {
-        const isExcel = !!recipient.subject && !!recipient.body;
-        const baseSubject = isExcel ? recipient.subject : subject;
-        const baseBody = isExcel ? recipient.body : bodyTemplate;
+  for (const recipient of recipients) {
+    const isExcel = !!recipient.subject && !!recipient.body;
+    const baseSubject = isExcel ? recipient.subject : subject;
+    const baseBody = isExcel ? recipient.body : bodyTemplate;
 
-        // Replace placeholders dynamically
-        const personalizedSubjectRaw = replacePlaceholders(baseSubject, recipient);
-        const personalizedSubject = personalizedSubjectRaw.length > 200 
-            ? personalizedSubjectRaw.substring(0, 197) + '...' 
-            : personalizedSubjectRaw;
+    // Replace placeholders dynamically
+    const personalizedSubjectRaw = replacePlaceholders(baseSubject, recipient);
+    const personalizedSubject =
+      personalizedSubjectRaw.length > 200
+        ? personalizedSubjectRaw.substring(0, 197) + "..."
+        : personalizedSubjectRaw;
 
-        let personalizedBodyRaw = replacePlaceholders(baseBody, recipient);
-        
-        let finalBodyText, footerIncluded;
-        if (isExcel) {
-             const { cleanText, hasSignature } = formatBody(personalizedBodyRaw);
-             finalBodyText = sanitizeHtml(cleanText, {
-                allowedTags: sanitizeHtml.defaults.allowedTags.concat(['img', 'h1', 'h2', 'span', 'strong', 'em', 'p', 'br', 'div', 'ul', 'li', 'ol']),
-                allowedAttributes: {
-                    '*': ['style', 'class'],
-                    'a': ['href', 'target'],
-                    'img': ['src']
-                }
-             });
-             footerIncluded = !hasSignature;
-        } else {
-             finalBodyText = sanitizeHtml(personalizedBodyRaw, {
-                allowedTags: sanitizeHtml.defaults.allowedTags.concat(['img', 'h1', 'h2', 'span', 'strong', 'em', 'p', 'br', 'div', 'ul', 'li', 'ol']),
-                allowedAttributes: {
-                    '*': ['style', 'class'],
-                    'a': ['href', 'target'],
-                    'img': ['src']
-                }
-             });
-             footerIncluded = true;
-        }
+    let personalizedBodyRaw = replacePlaceholders(baseBody, recipient);
 
-        // Composition
-        const fullHtml = `
+    let finalBodyText, footerIncluded;
+    if (isExcel) {
+      const { cleanText, hasSignature } = formatBody(personalizedBodyRaw);
+      finalBodyText = sanitizeHtml(cleanText, {
+        allowedTags: sanitizeHtml.defaults.allowedTags.concat([
+          "img",
+          "h1",
+          "h2",
+          "span",
+          "strong",
+          "em",
+          "p",
+          "br",
+          "div",
+          "ul",
+          "li",
+          "ol",
+        ]),
+        allowedAttributes: {
+          "*": ["style", "class"],
+          a: ["href", "target"],
+          img: ["src"],
+        },
+      });
+      footerIncluded = !hasSignature;
+    } else {
+      finalBodyText = sanitizeHtml(personalizedBodyRaw, {
+        allowedTags: sanitizeHtml.defaults.allowedTags.concat([
+          "img",
+          "h1",
+          "h2",
+          "span",
+          "strong",
+          "em",
+          "p",
+          "br",
+          "div",
+          "ul",
+          "li",
+          "ol",
+        ]),
+        allowedAttributes: {
+          "*": ["style", "class"],
+          a: ["href", "target"],
+          img: ["src"],
+        },
+      });
+      footerIncluded = true;
+    }
+
+    // Composition
+    const fullHtml = `
       <!DOCTYPE html>
       <html>
       <body style="font-family: Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6;">
@@ -149,50 +209,55 @@ async function processCampaign(recipients, subject, bodyTemplate, senderDetails,
             ${finalBodyText}
           </div>
 
-          ${footerIncluded ? footerHtml : ''}
+          ${footerIncluded ? footerHtml : ""}
         </div>
       </body>
       </html>
     `;
 
-        let attempts = 0;
-        let sent = false;
+    let attempts = 0;
+    let sent = false;
 
-        while (attempts < MAX_RETRIES && !sent) {
-            try {
-                const result = await sendWithTimeout({
-                    to: recipient.email,
-                    subject: personalizedSubject,
-                    html: fullHtml,
-                    fromName: footer.name || senderDetails.name,
-                    fromEmail: senderDetails.email,
-                    attachments: attachments
-                });
+    while (attempts < MAX_RETRIES && !sent) {
+      try {
+        const result = await sendWithTimeout({
+          to: recipient.email,
+          subject: personalizedSubject,
+          html: fullHtml,
+          fromName: footer.name || senderDetails.name,
+          fromEmail: senderDetails.email,
+          attachments: attachments,
+        });
 
-                if (result.success) {
-                    sent = true;
-                    statusCallback({ type: 'sent', email: recipient.email });
-                } else {
-                    attempts++;
-                    if (attempts >= MAX_RETRIES) {
-                        statusCallback({ type: 'failed', email: recipient.email });
-                    } else {
-                        await new Promise(resolve => setTimeout(resolve, 2000 * attempts));
-                    }
-                }
-            } catch (error) {
-                console.error(`SMTP timeout or error for ${recipient.email}:`, error.message);
-                attempts++;
-                if (attempts >= MAX_RETRIES) {
-                    statusCallback({ type: 'failed', email: recipient.email });
-                } else {
-                    await new Promise(resolve => setTimeout(resolve, 2000 * attempts));
-                }
-            }
+        if (result.success) {
+          sent = true;
+          statusCallback({ type: "sent", email: recipient.email });
+        } else {
+          attempts++;
+          if (attempts >= MAX_RETRIES) {
+            statusCallback({ type: "failed", email: recipient.email });
+          } else {
+            await new Promise((resolve) =>
+              setTimeout(resolve, 2000 * attempts),
+            );
+          }
         }
-
-        await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY));
+      } catch (error) {
+        console.error(
+          `SMTP timeout or error for ${recipient.email}:`,
+          error.message,
+        );
+        attempts++;
+        if (attempts >= MAX_RETRIES) {
+          statusCallback({ type: "failed", email: recipient.email });
+        } else {
+          await new Promise((resolve) => setTimeout(resolve, 2000 * attempts));
+        }
+      }
     }
 
-    statusCallback({ type: 'completed' });
+    await new Promise((resolve) => setTimeout(resolve, RATE_LIMIT_DELAY));
+  }
+
+  statusCallback({ type: "completed" });
 }
