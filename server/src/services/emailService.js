@@ -15,12 +15,19 @@ const isPlaceholder = (value = "") =>
   /^(your_|your-|example|test@|password|change-me)/i.test(String(value).trim());
 
 const getSmtpOptions = (user, pass, host = process.env.SMTP_HOST) => {
-  const port = Number(process.env.SMTP_PORT || 465);
+  const resolvedHost = host || "smtp.gmail.com";
+  const configuredPort = Number(process.env.SMTP_PORT);
+  const isValidPort =
+    Number.isInteger(configuredPort) &&
+    configuredPort >= 1 &&
+    configuredPort <= 65535;
+  const isGmail = resolvedHost.toLowerCase() === "smtp.gmail.com";
+  const port = isGmail ? 465 : isValidPort ? configuredPort : 465;
   const usesImplicitTls = port === 465;
   const usesStartTls = port === 587 || port === 2525;
 
   return {
-    host: host || "smtp.gmail.com",
+    host: resolvedHost,
     port,
     secure: usesImplicitTls,
     requireTLS: usesStartTls,
