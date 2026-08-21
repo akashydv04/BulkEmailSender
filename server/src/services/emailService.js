@@ -25,7 +25,12 @@ const createTransporter = (user, pass) => {
     process.env.SMTP_PASS = pass;
   }
 
-  if (activeUser && activePass && !isPlaceholder(activeUser) && !isPlaceholder(activePass)) {
+  if (
+    activeUser &&
+    activePass &&
+    !isPlaceholder(activeUser) &&
+    !isPlaceholder(activePass)
+  ) {
     console.log(`Configuring SMTP with user: ${activeUser}`);
     transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || "smtp.gmail.com",
