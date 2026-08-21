@@ -1,3 +1,9 @@
+/*
+ * Render commonly blocks outbound SMTP connections at the network layer.
+ * SMTP mode can therefore ETIMEDOUT on Render regardless of credentials.
+ * Use EMAIL_PROVIDER=resend or EMAIL_PROVIDER=sendgrid on Render for HTTPS
+ * email delivery; keep SMTP for environments where outbound SMTP is allowed.
+ */
 const nodemailer = require("nodemailer");
 const { htmlToText } = require("html-to-text");
 const axios = require("axios");
@@ -35,6 +41,54 @@ const verifyWithTimeout = (candidate) => {
   return Promise.race([candidate.verify(), timedOut]).finally(() =>
     clearTimeout(timeout),
   );
+};
+
+const getHttpProviderConfig = (provider) => {
+  if (provider === "resend") {
+    return {
+      apiKey: process.env.RESEND_API_KEY,
+      fromEmail: process.env.RESEND_FROM_EMAIL,
+      validationUrl: "https://api.resend.com/domains",
+    };
+  }
+  if (provider === "sendgrid") {
+    return {
+      apiKey: process.env.SENDGRID_API_KEY,
+      fromEmail: process.env.SENDGRID_FROM_EMAIL,
+      validationUrl: "https://api.sendgrid.com/v3/user/profile",
+    };
+  }
+  return null;
+};
+
+const validateHttpProvider = async (provider) => {
+  const config = getHttpProviderConfig(provider);
+  if (!config?.apiKey || !config.fromEmail) {
+    const error = new Error(
+      `${provider} requires ${provider === "resend" ? "RESEND_API_KEY and RESEND_FROM_EMAIL" : "SENDGRID_API_KEY and SENDGRID_FROM_EMAIL"}.`,
+    );
+    error.code = "INVALID_PROVIDER_CONFIG";
+    throw error;
+  }
+
+  try {
+    await axios.get(config.validationUrl, {
+      headers: { Authorization: `Bearer ${config.apiKey}` },
+      timeout: 10000,
+    });
+  } catch (error) {
+    const providerError = new Error(
+      `${provider} API validation failed: ${error.response?.data?.message || error.message}`,
+    );
+    providerError.code = error.response?.status
+      ? `HTTP_${error.response.status}`
+      : error.code || "HTTP_PROVIDER_ERROR";
+    throw providerError;
+  }
+
+  runtimeProvider = provider;
+  console.log(`Email provider verified: ${provider} (HTTPS API)`);
+  return { provider };
 };
 
 const getSmtpOptions = (
@@ -130,16 +184,11 @@ exports.configure = async (config = {}, legacyPass) => {
     .toLowerCase();
 
   if (provider === "resend") {
-    if (!process.env.RESEND_API_KEY || !process.env.RESEND_FROM_EMAIL) {
-      const error = new Error(
-        "Resend requires RESEND_API_KEY and RESEND_FROM_EMAIL.",
-      );
-      error.code = "INVALID_PROVIDER_CONFIG";
-      throw error;
-    }
-    runtimeProvider = "resend";
-    console.log("Email provider configured: resend (HTTP API)");
-    return { provider: "resend" };
+    return validateHttpProvider(provider);
+  }
+
+  if (provider === "sendgrid") {
+    return validateHttpProvider(provider);
   }
 
   if (provider !== "smtp") {
@@ -234,38 +283,54 @@ exports.sendEmail = async ({
 }) => {
   const text = htmlToText(html);
 
-  if (getProvider() === "resend") {
+  const provider = getProvider();
+  if (provider === "resend" || provider === "sendgrid") {
     try {
-      const resendAttachments = await Promise.all(
+      const providerConfig = getHttpProviderConfig(provider);
+      const httpAttachments = await Promise.all(
         (attachments || []).map(async (attachment) => ({
           filename: attachment.filename,
           content: (await fs.readFile(attachment.path)).toString("base64"),
         })),
       );
+      const isResend = provider === "resend";
       const response = await axios.post(
-        "https://api.resend.com/emails",
-        {
-          from: `${fromName || "Email Sender"} <${process.env.RESEND_FROM_EMAIL}>`,
-          to: [to],
-          subject,
-          text,
-          html,
-          attachments: resendAttachments,
-        },
+        isResend ? "https://api.resend.com/emails" : "https://api.sendgrid.com/v3/mail/send",
+        isResend
+          ? {
+              from: `${fromName || "Email Sender"} <${providerConfig.fromEmail}>`,
+              to: [to],
+              subject,
+              text,
+              html,
+              attachments: httpAttachments,
+            }
+          : {
+              personalizations: [{ to: [{ email: to }] }],
+              from: { email: providerConfig.fromEmail, name: fromName || "Email Sender" },
+              subject,
+              content: [
+                { type: "text/plain", value: text },
+                { type: "text/html", value: html },
+              ],
+              attachments: httpAttachments.map((attachment) => ({
+                ...attachment,
+                type: "application/octet-stream",
+                disposition: "attachment",
+              })),
+            },
         {
           headers: {
-            Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+            Authorization: `Bearer ${providerConfig.apiKey}`,
             "Content-Type": "application/json",
           },
           timeout: 10000,
+          validateStatus: (status) => status >= 200 && status < 300,
         },
       );
       return { success: true, messageId: response.data?.id };
     } catch (error) {
-      console.error(
-        "Resend API send failed:",
-        error.response?.data || error.message,
-      );
+      console.error(`${provider} API send failed:`, error.response?.data || error.message);
       return {
         success: false,
         error: error.response?.data?.message || error.message,

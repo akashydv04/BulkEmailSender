@@ -80,12 +80,15 @@ exports.configureSmtp = async (req, res) => {
       });
     }
 
-    res.json({ success: true, message: "SMTP Configured successfully" });
+    res.json({
+      success: true,
+      message: `${provider} email provider configured successfully`,
+    });
   } catch (error) {
     console.error("Config error:", error);
     res.status(422).json({
       success: false,
-      message: "SMTP authentication or connection failed",
+      message: "Email provider configuration failed",
       error: error.message || "Failed to configure SMTP",
       code: error.code || "EAUTH",
     });
