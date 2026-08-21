@@ -79,21 +79,26 @@ const createTransporter = (user, pass) => {
 createTransporter();
 
 exports.configure = async (user, pass) => {
-  if (!user || !pass) {
+  const normalizedUser = String(user || "").trim();
+  const normalizedPass = String(pass || "").replace(/\s+/g, "");
+
+  if (!normalizedUser || !normalizedPass) {
     return false;
   }
 
   const previousTransporter = transporter;
   const previousUser = runtimeSmtpUser;
   const previousPass = runtimeSmtpPass;
-  const candidate = nodemailer.createTransport(getSmtpOptions(user, pass));
+  const candidate = nodemailer.createTransport(
+    getSmtpOptions(normalizedUser, normalizedPass),
+  );
 
   try {
     await candidate.verify();
     transporter = candidate;
-    runtimeSmtpUser = user;
-    runtimeSmtpPass = pass;
-    console.log(`SMTP verified for user: ${user}`);
+    runtimeSmtpUser = normalizedUser;
+    runtimeSmtpPass = normalizedPass;
+    console.log(`SMTP verified for user: ${normalizedUser}`);
     return true;
   } catch (error) {
     transporter = previousTransporter;
@@ -108,7 +113,12 @@ exports.configure = async (user, pass) => {
     } else {
       console.error("SMTP verification failed:", error.message);
     }
-    throw new Error(`SMTP verification failed: ${error.message}`);
+    const verificationError = new Error(
+      `SMTP verification failed: ${error.message}`,
+    );
+    verificationError.code = error.code;
+    verificationError.command = error.command;
+    throw verificationError;
   }
 };
 

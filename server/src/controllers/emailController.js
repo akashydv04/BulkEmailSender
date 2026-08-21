@@ -50,15 +50,27 @@ const campaigns = new Map();
 exports.configureSmtp = async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: "Email and Password are required" });
+    const normalizedEmail = String(email || "").trim();
+    const normalizedPassword = String(password || "").replace(/\s+/g, "");
+    if (!normalizedEmail || !normalizedPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and Password are required",
+        error: "Email and Password are required",
+        code: "VALIDATION_ERROR",
+      });
     }
 
-    const configured = await emailService.configure(email, password);
+    const configured = await emailService.configure(
+      normalizedEmail,
+      normalizedPassword,
+    );
     if (!configured) {
-      return res.status(500).json({
-        error:
-          "SMTP configuration failed. Check the provided email and app password.",
+      return res.status(422).json({
+        success: false,
+        message: "SMTP configuration failed.",
+        error: "SMTP configuration failed.",
+        code: "SMTP_CONFIGURATION_ERROR",
       });
     }
 
@@ -67,8 +79,9 @@ exports.configureSmtp = async (req, res) => {
     console.error("Config error:", error);
     res.status(422).json({
       success: false,
-      message: error.message || "Failed to configure SMTP",
+      message: "SMTP authentication or connection failed",
       error: error.message || "Failed to configure SMTP",
+      code: error.code || "EAUTH",
     });
   }
 };
