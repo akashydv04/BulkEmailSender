@@ -51,7 +51,11 @@ exports.configureSmtp = async (req, res) => {
   try {
     const { email, password } = req.body;
     const provider = String(
-      req.body.provider || process.env.EMAIL_PROVIDER || "smtp",
+      req.body.provider ||
+        process.env.EMAIL_PROVIDER ||
+        (process.env.RENDER || process.env.NODE_ENV === "production"
+          ? "resend"
+          : "smtp"),
     )
       .trim()
       .toLowerCase();
