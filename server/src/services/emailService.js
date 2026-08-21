@@ -295,7 +295,9 @@ exports.sendEmail = async ({
       );
       const isResend = provider === "resend";
       const response = await axios.post(
-        isResend ? "https://api.resend.com/emails" : "https://api.sendgrid.com/v3/mail/send",
+        isResend
+          ? "https://api.resend.com/emails"
+          : "https://api.sendgrid.com/v3/mail/send",
         isResend
           ? {
               from: `${fromName || "Email Sender"} <${providerConfig.fromEmail}>`,
@@ -307,7 +309,10 @@ exports.sendEmail = async ({
             }
           : {
               personalizations: [{ to: [{ email: to }] }],
-              from: { email: providerConfig.fromEmail, name: fromName || "Email Sender" },
+              from: {
+                email: providerConfig.fromEmail,
+                name: fromName || "Email Sender",
+              },
               subject,
               content: [
                 { type: "text/plain", value: text },
@@ -330,7 +335,10 @@ exports.sendEmail = async ({
       );
       return { success: true, messageId: response.data?.id };
     } catch (error) {
-      console.error(`${provider} API send failed:`, error.response?.data || error.message);
+      console.error(
+        `${provider} API send failed:`,
+        error.response?.data || error.message,
+      );
       return {
         success: false,
         error: error.response?.data?.message || error.message,
