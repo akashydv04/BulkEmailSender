@@ -28,7 +28,15 @@ git push origin feature/dynamic-resume-emails
 6. Add environment variables:
    - `PORT=5001`
    - `FRONTEND_URL=https://your-frontend-url.vercel.app`
+   - `SMTP_HOST=smtp.gmail.com`
+   - `SMTP_PORT=465`
+   - `SMTP_SECURE=true` (ports `587` and `2525` use STARTTLS automatically)
+   - `SMTP_CONNECTION_TIMEOUT=10000`
+   - `SMTP_GREETING_TIMEOUT=5000`
+   - `SMTP_SOCKET_TIMEOUT=10000`
    - `GEMINI_API_KEY=your_google_api_key_if_using_resume_generation`
+   - `GEMINI_MODEL=gemini-2.5-flash`
+   - `GEMINI_FALLBACK_MODEL=gemini-2.5-flash-lite`
 7. Click Create Web Service.
 8. Copy the backend URL after deployment.
 
@@ -63,7 +71,9 @@ Open the Vercel URL and verify:
 
 ## 5) Gmail configuration
 
-Use a Gmail App Password, not your main password:
+SMTP credentials are entered dynamically by each user in the app. Do not add
+`SMTP_USER` or `SMTP_PASS` to Render unless you intentionally want a fallback
+sender. Use a Gmail App Password, not your main password:
 
 - Visit https://myaccount.google.com/apppasswords
 - Generate a 16-character app password

@@ -14,15 +14,21 @@ const smtpOptions = {
 const isPlaceholder = (value = "") =>
   /^(your_|your-|example|test@|password|change-me)/i.test(String(value).trim());
 
-const getSmtpOptions = (user, pass, host = process.env.SMTP_HOST) => {
+const getSmtpOptions = (
+  user,
+  pass,
+  host = process.env.SMTP_HOST,
+  requestedPort = process.env.SMTP_PORT,
+) => {
   const resolvedHost = host || "smtp.gmail.com";
-  const configuredPort = Number(process.env.SMTP_PORT);
+  const configuredPort = Number(requestedPort);
   const isValidPort =
     Number.isInteger(configuredPort) &&
     configuredPort >= 1 &&
     configuredPort <= 65535;
   const isGmail = resolvedHost.toLowerCase() === "smtp.gmail.com";
-  const port = isGmail ? 465 : isValidPort ? configuredPort : 465;
+  const isRender = Boolean(process.env.RENDER) || process.env.NODE_ENV === "production";
+  const port = isRender || isGmail ? 465 : isValidPort ? configuredPort : 465;
   const usesImplicitTls = port === 465;
   const usesStartTls = port === 587 || port === 2525;
 
@@ -78,19 +84,36 @@ const createTransporter = (user, pass) => {
 
 createTransporter();
 
-exports.configure = async (user, pass) => {
-  const normalizedUser = String(user || "").trim();
-  const normalizedPass = String(pass || "").replace(/\s+/g, "");
+exports.configure = async (config = {}, legacyPass) => {
+  const options =
+    typeof config === "string"
+      ? { email: config, password: legacyPass }
+      : config || {};
+  const host = options.host || options.SMTP_HOST || process.env.SMTP_HOST;
+  const normalizedUser = String(
+    options.user ||
+      options.email ||
+      options.SMTP_USER ||
+      process.env.SMTP_USER ||
+      "",
+  ).trim();
+  const normalizedPass = String(
+    options.pass ||
+      options.password ||
+      options.SMTP_PASS ||
+      process.env.SMTP_PASS ||
+      "",
+  ).replace(/\s+/g, "");
 
   if (!normalizedUser || !normalizedPass) {
-    return false;
+    throw new Error("Email and Password are required");
   }
 
   const previousTransporter = transporter;
   const previousUser = runtimeSmtpUser;
   const previousPass = runtimeSmtpPass;
   const candidate = nodemailer.createTransport(
-    getSmtpOptions(normalizedUser, normalizedPass),
+    getSmtpOptions(normalizedUser, normalizedPass, host, options.port || options.SMTP_PORT),
   );
 
   try {
@@ -98,8 +121,10 @@ exports.configure = async (user, pass) => {
     transporter = candidate;
     runtimeSmtpUser = normalizedUser;
     runtimeSmtpPass = normalizedPass;
-    console.log(`SMTP verified for user: ${normalizedUser}`);
-    return true;
+    console.log(
+      `SMTP verified for user: ${normalizedUser} on port ${candidate.options.port}`,
+    );
+    return candidate;
   } catch (error) {
     transporter = previousTransporter;
     runtimeSmtpUser = previousUser;
