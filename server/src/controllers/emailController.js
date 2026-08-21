@@ -253,17 +253,41 @@ exports.generateEmail = async (req, res) => {
     const response = await generateEmailContent(ai, prompt);
 
     const resultText = response.text;
-    const result = JSON.parse(resultText);
+    if (!resultText) {
+      throw new Error("AI provider returned an empty response.");
+    }
+
+    let result;
+    try {
+      result = JSON.parse(resultText);
+    } catch {
+      throw new Error("AI provider returned an invalid JSON response.");
+    }
 
     res.json(result);
   } catch (error) {
-    console.error("Error generating email:", error);
+    console.error("Error generating email:", {
+      message: error.message,
+      status: error.status || error.code || error.error?.code,
+      stack: error.stack,
+    });
     const status = isTransientAiError(error) ? 503 : 500;
     res.status(status).json({
       error:
         status === 503
           ? "Email generation is temporarily unavailable. Please try again shortly."
-          : "Failed to generate email.",
+          : error.message,
     });
+  } finally {
+    if (req.file?.path) {
+      fs.unlink(req.file.path, (unlinkError) => {
+        if (unlinkError) {
+          console.error(
+            "Failed to remove uploaded resume:",
+            unlinkError.message,
+          );
+        }
+      });
+    }
   }
 };
