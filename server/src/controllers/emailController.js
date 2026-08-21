@@ -50,9 +50,14 @@ const campaigns = new Map();
 exports.configureSmtp = async (req, res) => {
   try {
     const { email, password } = req.body;
+    const provider = String(
+      req.body.provider || process.env.EMAIL_PROVIDER || "smtp",
+    )
+      .trim()
+      .toLowerCase();
     const normalizedEmail = String(email || "").trim();
     const normalizedPassword = String(password || "").replace(/\s+/g, "");
-    if (!normalizedEmail || !normalizedPassword) {
+    if (provider === "smtp" && (!normalizedEmail || !normalizedPassword)) {
       return res.status(400).json({
         success: false,
         message: "Email and Password are required",
@@ -61,10 +66,11 @@ exports.configureSmtp = async (req, res) => {
       });
     }
 
-    const configured = await emailService.configure(
-      normalizedEmail,
-      normalizedPassword,
-    );
+    const configured = await emailService.configure({
+      provider,
+      email: normalizedEmail,
+      password: normalizedPassword,
+    });
     if (!configured) {
       return res.status(422).json({
         success: false,

@@ -1,9 +1,12 @@
 const nodemailer = require("nodemailer");
 const { htmlToText } = require("html-to-text");
+const axios = require("axios");
+const fs = require("fs/promises");
 
 let transporter = null;
 let runtimeSmtpUser = null;
 let runtimeSmtpPass = null;
+let runtimeProvider = process.env.EMAIL_PROVIDER || "smtp";
 
 const smtpOptions = {
   connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT || 10000),
@@ -13,6 +16,26 @@ const smtpOptions = {
 
 const isPlaceholder = (value = "") =>
   /^(your_|your-|example|test@|password|change-me)/i.test(String(value).trim());
+
+const getProvider = () =>
+  String(process.env.EMAIL_PROVIDER || runtimeProvider || "smtp")
+    .trim()
+    .toLowerCase();
+
+const verifyWithTimeout = (candidate) => {
+  let timeout;
+  const timedOut = new Promise((_, reject) => {
+    timeout = setTimeout(() => {
+      const error = new Error("SMTP verification timed out");
+      error.code = "ETIMEDOUT";
+      reject(error);
+    }, 10000);
+  });
+
+  return Promise.race([candidate.verify(), timedOut]).finally(() =>
+    clearTimeout(timeout),
+  );
+};
 
 const getSmtpOptions = (
   user,
@@ -27,7 +50,8 @@ const getSmtpOptions = (
     configuredPort >= 1 &&
     configuredPort <= 65535;
   const isGmail = resolvedHost.toLowerCase() === "smtp.gmail.com";
-  const isRender = Boolean(process.env.RENDER) || process.env.NODE_ENV === "production";
+  const isRender =
+    Boolean(process.env.RENDER) || process.env.NODE_ENV === "production";
   const port = isRender || isGmail ? 465 : isValidPort ? configuredPort : 465;
   const usesImplicitTls = port === 465;
   const usesStartTls = port === 587 || port === 2525;
@@ -82,6 +106,16 @@ const createTransporter = (user, pass) => {
   return false;
 };
 
+if (
+  process.env.SMTP_USER?.toLowerCase().endsWith("@gmail.com") &&
+  process.env.SMTP_PASS &&
+  process.env.SMTP_PASS.replace(/\s+/g, "").length !== 16
+) {
+  console.warn(
+    "SMTP warning: Gmail SMTP_PASS should be a 16-character App Password.",
+  );
+}
+
 createTransporter();
 
 exports.configure = async (config = {}, legacyPass) => {
@@ -89,6 +123,30 @@ exports.configure = async (config = {}, legacyPass) => {
     typeof config === "string"
       ? { email: config, password: legacyPass }
       : config || {};
+  const provider = String(
+    options.provider || process.env.EMAIL_PROVIDER || "smtp",
+  )
+    .trim()
+    .toLowerCase();
+
+  if (provider === "resend") {
+    if (!process.env.RESEND_API_KEY || !process.env.RESEND_FROM_EMAIL) {
+      const error = new Error(
+        "Resend requires RESEND_API_KEY and RESEND_FROM_EMAIL.",
+      );
+      error.code = "INVALID_PROVIDER_CONFIG";
+      throw error;
+    }
+    runtimeProvider = "resend";
+    console.log("Email provider configured: resend (HTTP API)");
+    return { provider: "resend" };
+  }
+
+  if (provider !== "smtp") {
+    const error = new Error(`Unsupported email provider: ${provider}`);
+    error.code = "INVALID_PROVIDER";
+    throw error;
+  }
   const host = options.host || options.SMTP_HOST || process.env.SMTP_HOST;
   const normalizedUser = String(
     options.user ||
@@ -108,19 +166,38 @@ exports.configure = async (config = {}, legacyPass) => {
   if (!normalizedUser || !normalizedPass) {
     throw new Error("Email and Password are required");
   }
+  if (
+    normalizedUser.toLowerCase().endsWith("@gmail.com") &&
+    normalizedPass.length !== 16
+  ) {
+    const error = new Error(
+      "Gmail requires a 16-character App Password without spaces.",
+    );
+    error.code = "INVALID_APP_PASSWORD";
+    throw error;
+  }
 
   const previousTransporter = transporter;
   const previousUser = runtimeSmtpUser;
   const previousPass = runtimeSmtpPass;
   const candidate = nodemailer.createTransport(
-    getSmtpOptions(normalizedUser, normalizedPass, host, options.port || options.SMTP_PORT),
+    getSmtpOptions(
+      normalizedUser,
+      normalizedPass,
+      host,
+      options.port || options.SMTP_PORT,
+    ),
   );
 
   try {
-    await candidate.verify();
+    console.log(
+      `SMTP verification using ${candidate.options.host}:${candidate.options.port} secure=${candidate.options.secure}`,
+    );
+    await verifyWithTimeout(candidate);
     transporter = candidate;
     runtimeSmtpUser = normalizedUser;
     runtimeSmtpPass = normalizedPass;
+    runtimeProvider = "smtp";
     console.log(
       `SMTP verified for user: ${normalizedUser} on port ${candidate.options.port}`,
     );
@@ -156,6 +233,45 @@ exports.sendEmail = async ({
   attachments,
 }) => {
   const text = htmlToText(html);
+
+  if (getProvider() === "resend") {
+    try {
+      const resendAttachments = await Promise.all(
+        (attachments || []).map(async (attachment) => ({
+          filename: attachment.filename,
+          content: (await fs.readFile(attachment.path)).toString("base64"),
+        })),
+      );
+      const response = await axios.post(
+        "https://api.resend.com/emails",
+        {
+          from: `${fromName || "Email Sender"} <${process.env.RESEND_FROM_EMAIL}>`,
+          to: [to],
+          subject,
+          text,
+          html,
+          attachments: resendAttachments,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          timeout: 10000,
+        },
+      );
+      return { success: true, messageId: response.data?.id };
+    } catch (error) {
+      console.error(
+        "Resend API send failed:",
+        error.response?.data || error.message,
+      );
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message,
+      };
+    }
+  }
 
   if (!transporter) {
     const missingConfig = !process.env.SMTP_USER || !process.env.SMTP_PASS;
