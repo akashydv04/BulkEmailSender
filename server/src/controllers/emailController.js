@@ -65,7 +65,9 @@ exports.configureSmtp = async (req, res) => {
     res.json({ success: true, message: "SMTP Configured successfully" });
   } catch (error) {
     console.error("Config error:", error);
-    res.status(502).json({
+    res.status(422).json({
+      success: false,
+      message: error.message || "Failed to configure SMTP",
       error: error.message || "Failed to configure SMTP",
     });
   }

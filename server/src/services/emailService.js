@@ -7,12 +7,28 @@ let runtimeSmtpPass = null;
 
 const smtpOptions = {
   connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT || 10000),
-  greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT || 10000),
-  socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT || 15000),
+  greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT || 5000),
+  socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT || 10000),
 };
 
 const isPlaceholder = (value = "") =>
   /^(your_|your-|example|test@|password|change-me)/i.test(String(value).trim());
+
+const getSmtpOptions = (user, pass, host = process.env.SMTP_HOST) => {
+  const port = Number(process.env.SMTP_PORT || 465);
+  const usesImplicitTls = port === 465;
+  const usesStartTls = port === 587 || port === 2525;
+
+  return {
+    host: host || "smtp.gmail.com",
+    port,
+    secure: usesImplicitTls,
+    requireTLS: usesStartTls,
+    auth: { user, pass },
+    tls: { rejectUnauthorized: false },
+    ...smtpOptions,
+  };
+};
 
 const createTransporter = (user, pass) => {
   const activeUser = user ?? runtimeSmtpUser ?? process.env.SMTP_USER;
@@ -32,14 +48,9 @@ const createTransporter = (user, pass) => {
     !isPlaceholder(activePass)
   ) {
     console.log(`Configuring SMTP with user: ${activeUser}`);
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || "smtp.gmail.com",
-      port: Number(process.env.SMTP_PORT || 587),
-      secure: process.env.SMTP_SECURE === "true",
-      auth: { user: activeUser, pass: activePass },
-      tls: { rejectUnauthorized: false },
-      ...smtpOptions,
-    });
+    transporter = nodemailer.createTransport(
+      getSmtpOptions(activeUser, activePass),
+    );
     return true;
   }
 
@@ -50,16 +61,9 @@ const createTransporter = (user, pass) => {
     !isPlaceholder(process.env.SMTP_USER) &&
     !isPlaceholder(process.env.SMTP_PASS)
   ) {
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: process.env.SMTP_PORT || 587,
-      secure: process.env.SMTP_SECURE === "true",
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-      ...smtpOptions,
-    });
+    transporter = nodemailer.createTransport(
+      getSmtpOptions(process.env.SMTP_USER, process.env.SMTP_PASS),
+    );
     return true;
   }
   return false;
@@ -75,14 +79,7 @@ exports.configure = async (user, pass) => {
   const previousTransporter = transporter;
   const previousUser = runtimeSmtpUser;
   const previousPass = runtimeSmtpPass;
-  const candidate = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || "smtp.gmail.com",
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: process.env.SMTP_SECURE === "true",
-    auth: { user, pass },
-    tls: { rejectUnauthorized: false },
-    ...smtpOptions,
-  });
+  const candidate = nodemailer.createTransport(getSmtpOptions(user, pass));
 
   try {
     await candidate.verify();
@@ -95,7 +92,15 @@ exports.configure = async (user, pass) => {
     transporter = previousTransporter;
     runtimeSmtpUser = previousUser;
     runtimeSmtpPass = previousPass;
-    console.error("SMTP verification failed:", error.message);
+    if (process.env.NODE_ENV === "production") {
+      console.error("SMTP verification failed:", {
+        code: error.code,
+        command: error.command,
+        message: error.message,
+      });
+    } else {
+      console.error("SMTP verification failed:", error.message);
+    }
     throw new Error(`SMTP verification failed: ${error.message}`);
   }
 };
