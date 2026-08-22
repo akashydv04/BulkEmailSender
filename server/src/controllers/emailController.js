@@ -6,9 +6,9 @@ const fs = require("fs");
 const pdfParse = require("pdf-parse");
 const { GoogleGenAI } = require("@google/genai");
 
-const AI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const AI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
 const AI_FALLBACK_MODEL =
-  process.env.GEMINI_FALLBACK_MODEL || "gemini-2.5-flash-lite";
+  process.env.GEMINI_FALLBACK_MODEL || "gemini-2.0-flash";
 
 const wait = (milliseconds) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
