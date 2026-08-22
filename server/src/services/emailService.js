@@ -41,6 +41,9 @@ const buildSmtpTransportOptions = (config = {}, env = process.env) => {
     host: smtpConfig.host,
     port,
     secure,
+    pool: true,
+    maxConnections: 5,
+    maxMessages: 100,
     auth: {
       user: smtpConfig.user.trim(),
       pass: smtpConfig.pass.replace(/\s+/g, ""),
@@ -100,15 +103,19 @@ const createTransporter = (user, pass) => {
     const appPassword = String(activePass).replace(/\s+/g, "");
     const isProduction = isRenderEnvironment();
     const host = process.env.SMTP_HOST || "smtp.gmail.com";
-    const port = isProduction ? 465 : Number(process.env.SMTP_PORT || 587);
-    const secure = isProduction || port === 465;
+    const port = isProduction ? 465 : Number(process.env.SMTP_PORT || 465);
+    const secure = true;
+    const authUser = String(activeUser).trim();
 
-    console.log(`Configuring SMTP with user: ${activeUser}`);
+    console.log(`Configuring SMTP with user: ${authUser}`);
     transporter = nodemailer.createTransport({
       host,
       port,
       secure,
-      auth: { user: String(activeUser).trim(), pass: appPassword },
+      pool: true,
+      maxConnections: 5,
+      maxMessages: 100,
+      auth: { user: authUser, pass: appPassword },
       tls: { rejectUnauthorized: false },
       connectionTimeout: 10000,
       greetingTimeout: 5000,
@@ -121,13 +128,16 @@ const createTransporter = (user, pass) => {
     const appPassword = String(process.env.SMTP_PASS).replace(/\s+/g, "");
     const isProduction = isRenderEnvironment();
     const host = process.env.SMTP_HOST;
-    const port = isProduction ? 465 : Number(process.env.SMTP_PORT || 587);
-    const secure = isProduction || port === 465;
+    const port = isProduction ? 465 : Number(process.env.SMTP_PORT || 465);
+    const secure = true;
 
     transporter = nodemailer.createTransport({
       host,
       port,
       secure,
+      pool: true,
+      maxConnections: 5,
+      maxMessages: 100,
       auth: {
         user: process.env.SMTP_USER,
         pass: appPassword,
@@ -211,10 +221,11 @@ exports.sendEmail = async ({
   }
 
   try {
-    const senderAddress = transporter.options.auth?.user || fromEmail;
+    const senderAddress = transporter.options.auth?.user || fromEmail || process.env.SMTP_USER;
+    const from = `"${fromName || "SenderPortal"}" <${senderAddress}>`;
 
     const info = await transporter.sendMail({
-      from: `"${fromName}" <${senderAddress}>`,
+      from,
       to,
       subject,
       text,
@@ -223,7 +234,7 @@ exports.sendEmail = async ({
     });
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error(`Failed to send to ${to}:`, error);
-    return { success: false, error: error.message };
+    console.error(`Failed to send to ${to}:`, error?.message || error);
+    return { success: false, error: error.message || String(error) };
   }
 };

@@ -134,13 +134,14 @@ async function processCampaign(
   statusCallback,
 ) {
   const footerHtml = generateFooterHtml(footer);
+  const batchSize = 5;
+  const authUser = String(process.env.SMTP_USER || senderDetails.email || "").trim();
 
-  for (const recipient of recipients) {
+  const processRecipient = async (recipient) => {
     const isExcel = !!recipient.subject && !!recipient.body;
     const baseSubject = isExcel ? recipient.subject : subject;
     const baseBody = isExcel ? recipient.body : bodyTemplate;
 
-    // Replace placeholders dynamically
     const personalizedSubjectRaw = replacePlaceholders(baseSubject, recipient);
     const personalizedSubject =
       personalizedSubjectRaw.length > 200
@@ -199,7 +200,6 @@ async function processCampaign(
       footerIncluded = true;
     }
 
-    // Composition
     const fullHtml = `
       <!DOCTYPE html>
       <html>
@@ -216,46 +216,51 @@ async function processCampaign(
     `;
 
     let attempts = 0;
-    let sent = false;
-
-    while (attempts < MAX_RETRIES && !sent) {
+    while (attempts < MAX_RETRIES) {
       try {
         const result = await sendWithTimeout({
           to: recipient.email,
           subject: personalizedSubject,
           html: fullHtml,
-          fromName: footer.name || senderDetails.name,
-          fromEmail: senderDetails.email,
+          fromName: footer.name || senderDetails.name || "SenderPortal",
+          fromEmail: authUser || senderDetails.email,
           attachments: attachments,
         });
 
         if (result.success) {
-          sent = true;
           statusCallback({ type: "sent", email: recipient.email });
-        } else {
-          attempts++;
-          if (attempts >= MAX_RETRIES) {
-            statusCallback({ type: "failed", email: recipient.email });
-          } else {
-            await new Promise((resolve) =>
-              setTimeout(resolve, 2000 * attempts),
-            );
-          }
+          return;
         }
-      } catch (error) {
-        console.error(
-          `SMTP timeout or error for ${recipient.email}:`,
-          error.message,
-        );
+
         attempts++;
         if (attempts >= MAX_RETRIES) {
+          console.error(
+            `SMTP failure for ${recipient.email}: ${result.error || "unknown error"}`,
+          );
           statusCallback({ type: "failed", email: recipient.email });
-        } else {
-          await new Promise((resolve) => setTimeout(resolve, 2000 * attempts));
+          return;
         }
+
+        await new Promise((resolve) => setTimeout(resolve, 2000 * attempts));
+      } catch (error) {
+        attempts++;
+        const detail = error?.message || String(error);
+        console.error(
+          `SMTP timeout or error for ${recipient.email}: ${detail}`,
+        );
+        if (attempts >= MAX_RETRIES) {
+          statusCallback({ type: "failed", email: recipient.email });
+          return;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 2000 * attempts));
       }
     }
+  };
 
+  for (let index = 0; index < recipients.length; index += batchSize) {
+    const batch = recipients.slice(index, index + batchSize);
+    await Promise.allSettled(batch.map(processRecipient));
     await new Promise((resolve) => setTimeout(resolve, RATE_LIMIT_DELAY));
   }
 

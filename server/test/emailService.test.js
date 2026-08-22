@@ -37,5 +37,8 @@ test("production SMTP config forces 465 SSL and strips spaces from app password"
 
   assert.equal(options.port, 465);
   assert.equal(options.secure, true);
+  assert.equal(options.pool, true);
+  assert.equal(options.maxConnections, 5);
+  assert.equal(options.maxMessages, 100);
   assert.equal(options.auth.pass, "12345678901234");
 });
