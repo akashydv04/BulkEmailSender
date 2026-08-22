@@ -65,13 +65,13 @@ const getDefaultProvider = (config = {}) => {
 
   const hasSmtpCredentials = Boolean(
     config.user ||
-      config.email ||
-      config.password ||
-      config.pass ||
-      config.SMTP_USER ||
-      config.SMTP_PASS ||
-      process.env.SMTP_USER ||
-      process.env.SMTP_PASS,
+    config.email ||
+    config.password ||
+    config.pass ||
+    config.SMTP_USER ||
+    config.SMTP_PASS ||
+    process.env.SMTP_USER ||
+    process.env.SMTP_PASS,
   );
 
   if (hasSmtpCredentials) {
@@ -174,7 +174,9 @@ exports.configure = (config = {}, legacyPass) => {
     normalizedUser.toLowerCase().endsWith("@gmail.com") &&
     normalizedPass.length !== 16
   ) {
-    throw new Error("Gmail requires a 16-character App Password without spaces.");
+    throw new Error(
+      "Gmail requires a 16-character App Password without spaces.",
+    );
   }
 
   runtimeSmtpUser = normalizedUser;
