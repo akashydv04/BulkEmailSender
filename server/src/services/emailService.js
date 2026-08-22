@@ -30,6 +30,46 @@ const smtpOptions = {
 const isPlaceholder = (value = "") =>
   /^(your_|your-|example|test@|password|change-me)/i.test(String(value).trim());
 
+const resolveSmtpConfig = (config = {}, env = process.env) => {
+  const host =
+    config.host || config.SMTP_HOST || env.SMTP_HOST || "smtp.gmail.com";
+  const user =
+    config.user || config.email || config.SMTP_USER || env.SMTP_USER || "";
+  const pass =
+    config.pass || config.password || config.SMTP_PASS || env.SMTP_PASS || "";
+
+  return {
+    host: String(host || "smtp.gmail.com").trim() || "smtp.gmail.com",
+    user: String(user || "").trim(),
+    pass: String(pass || "").replace(/\s+/g, ""),
+    port: config.port ?? config.SMTP_PORT ?? env.SMTP_PORT ?? 465,
+  };
+};
+
+const buildSmtpTransportOptions = (config = {}, env = process.env) => {
+  const smtpConfig = resolveSmtpConfig(config, env);
+  const isProductionLike = Boolean(env.RENDER || env.NODE_ENV === "production");
+  const port = isProductionLike
+    ? 465
+    : Number(smtpConfig.port) > 0 && Number.isFinite(Number(smtpConfig.port))
+      ? Number(smtpConfig.port)
+      : 465;
+  const secure = port === 465;
+
+  return {
+    host: smtpConfig.host,
+    port,
+    secure,
+    auth: {
+      user: smtpConfig.user.trim(),
+      pass: smtpConfig.pass.replace(/\s+/g, ""),
+    },
+    tls: { rejectUnauthorized: false },
+    ...(secure ? {} : { requireTLS: port === 587 || port === 2525 }),
+    ...smtpOptions,
+  };
+};
+
 const getProvider = () =>
   String(process.env.EMAIL_PROVIDER || runtimeProvider || getDefaultProvider())
     .trim()
@@ -70,9 +110,18 @@ const getHttpProviderConfig = (provider) => {
 
 const validateHttpProvider = async (provider) => {
   const config = getHttpProviderConfig(provider);
-  if (!config?.apiKey || !config.fromEmail) {
+  const missing = [];
+  if (!config?.apiKey || isPlaceholder(config.apiKey)) {
+    missing.push(provider === "resend" ? "RESEND_API_KEY" : "SENDGRID_API_KEY");
+  }
+  if (!config?.fromEmail || isPlaceholder(config.fromEmail)) {
+    missing.push(
+      provider === "resend" ? "RESEND_FROM_EMAIL" : "SENDGRID_FROM_EMAIL",
+    );
+  }
+  if (missing.length > 0) {
     const error = new Error(
-      `${provider} requires ${provider === "resend" ? "RESEND_API_KEY and RESEND_FROM_EMAIL" : "SENDGRID_API_KEY and SENDGRID_FROM_EMAIL"}.`,
+      `${provider} requires these Render environment variables: ${missing.join(", ")}.`,
     );
     error.code = "INVALID_PROVIDER_CONFIG";
     throw error;
@@ -103,29 +152,16 @@ const getSmtpOptions = (
   pass,
   host = process.env.SMTP_HOST,
   requestedPort = process.env.SMTP_PORT,
-) => {
-  const resolvedHost = host || "smtp.gmail.com";
-  const configuredPort = Number(requestedPort);
-  const isValidPort =
-    Number.isInteger(configuredPort) &&
-    configuredPort >= 1 &&
-    configuredPort <= 65535;
-  const isGmail = resolvedHost.toLowerCase() === "smtp.gmail.com";
-  const port =
-    isRenderEnvironment() || isGmail ? 465 : isValidPort ? configuredPort : 465;
-  const usesImplicitTls = port === 465;
-  const usesStartTls = port === 587 || port === 2525;
-
-  return {
-    host: resolvedHost,
-    port,
-    secure: usesImplicitTls,
-    requireTLS: usesStartTls,
-    auth: { user, pass },
-    tls: { rejectUnauthorized: false },
-    ...smtpOptions,
-  };
-};
+) =>
+  buildSmtpTransportOptions(
+    {
+      host,
+      user,
+      pass,
+      port: requestedPort,
+    },
+    process.env,
+  );
 
 const createTransporter = (user, pass) => {
   const activeUser = user ?? runtimeSmtpUser ?? process.env.SMTP_USER;
@@ -178,6 +214,9 @@ if (
 
 createTransporter();
 
+module.exports.resolveSmtpConfig = resolveSmtpConfig;
+module.exports.buildSmtpTransportOptions = buildSmtpTransportOptions;
+
 exports.configure = async (config = {}, legacyPass) => {
   const options =
     typeof config === "string"
@@ -202,21 +241,9 @@ exports.configure = async (config = {}, legacyPass) => {
     error.code = "INVALID_PROVIDER";
     throw error;
   }
-  const host = options.host || options.SMTP_HOST || process.env.SMTP_HOST;
-  const normalizedUser = String(
-    options.user ||
-      options.email ||
-      options.SMTP_USER ||
-      process.env.SMTP_USER ||
-      "",
-  ).trim();
-  const normalizedPass = String(
-    options.pass ||
-      options.password ||
-      options.SMTP_PASS ||
-      process.env.SMTP_PASS ||
-      "",
-  ).replace(/\s+/g, "");
+
+  const smtpConfig = resolveSmtpConfig(options, process.env);
+  const { host, user: normalizedUser, pass: normalizedPass } = smtpConfig;
 
   if (!normalizedUser || !normalizedPass) {
     throw new Error("Email and Password are required");
@@ -236,11 +263,14 @@ exports.configure = async (config = {}, legacyPass) => {
   const previousUser = runtimeSmtpUser;
   const previousPass = runtimeSmtpPass;
   const candidate = nodemailer.createTransport(
-    getSmtpOptions(
-      normalizedUser,
-      normalizedPass,
-      host,
-      options.port || options.SMTP_PORT,
+    buildSmtpTransportOptions(
+      {
+        host,
+        user: normalizedUser,
+        pass: normalizedPass,
+        port: options.port ?? options.SMTP_PORT,
+      },
+      process.env,
     ),
   );
 

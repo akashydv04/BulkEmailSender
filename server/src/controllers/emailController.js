@@ -49,9 +49,9 @@ const campaigns = new Map();
 
 exports.configureSmtp = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const body = req.body || {};
     const provider = String(
-      req.body.provider ||
+      body.provider ||
         process.env.EMAIL_PROVIDER ||
         (process.env.RENDER || process.env.NODE_ENV === "production"
           ? "resend"
@@ -59,6 +59,20 @@ exports.configureSmtp = async (req, res) => {
     )
       .trim()
       .toLowerCase();
+    const email =
+      body.email ||
+      body.user ||
+      body.SMTP_USER ||
+      body.smtpUser ||
+      "";
+    const password =
+      body.password ||
+      body.pass ||
+      body.SMTP_PASS ||
+      body.smtpPass ||
+      "";
+    const host =
+      body.host || body.SMTP_HOST || body.smtpHost || process.env.SMTP_HOST;
     const normalizedEmail = String(email || "").trim();
     const normalizedPassword = String(password || "").replace(/\s+/g, "");
     if (provider === "smtp" && (!normalizedEmail || !normalizedPassword)) {
@@ -72,8 +86,14 @@ exports.configureSmtp = async (req, res) => {
 
     const configured = await emailService.configure({
       provider,
+      host,
       email: normalizedEmail,
+      user: normalizedEmail,
       password: normalizedPassword,
+      pass: normalizedPassword,
+      SMTP_HOST: host,
+      SMTP_USER: normalizedEmail,
+      SMTP_PASS: normalizedPassword,
     });
     if (!configured) {
       return res.status(422).json({
