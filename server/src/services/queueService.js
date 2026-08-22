@@ -135,7 +135,9 @@ async function processCampaign(
 ) {
   const footerHtml = generateFooterHtml(footer);
   const batchSize = 5;
-  const authUser = String(process.env.SMTP_USER || senderDetails.email || "").trim();
+  const authUser = String(
+    process.env.SMTP_USER || senderDetails.email || "",
+  ).trim();
 
   const processRecipient = async (recipient) => {
     const isExcel = !!recipient.subject && !!recipient.body;
@@ -234,22 +236,32 @@ async function processCampaign(
 
         attempts++;
         if (attempts >= MAX_RETRIES) {
+          const failureDetail = `${result.error || "unknown error"}${result.code ? ` [${result.code}]` : ""}`;
           console.error(
-            `SMTP failure for ${recipient.email}: ${result.error || "unknown error"}`,
+            `SMTP failure for ${recipient.email}: ${failureDetail}`,
           );
-          statusCallback({ type: "failed", email: recipient.email });
+          statusCallback({
+            type: "failed",
+            email: recipient.email,
+            error: failureDetail,
+          });
           return;
         }
 
         await new Promise((resolve) => setTimeout(resolve, 2000 * attempts));
       } catch (error) {
         attempts++;
+        const errorCode = error?.code || "SMTP_TIMEOUT";
         const detail = error?.message || String(error);
         console.error(
-          `SMTP timeout or error for ${recipient.email}: ${detail}`,
+          `SMTP timeout or error for ${recipient.email}: [${errorCode}] ${detail}`,
         );
         if (attempts >= MAX_RETRIES) {
-          statusCallback({ type: "failed", email: recipient.email });
+          statusCallback({
+            type: "failed",
+            email: recipient.email,
+            error: `${detail} [${errorCode}]`,
+          });
           return;
         }
 

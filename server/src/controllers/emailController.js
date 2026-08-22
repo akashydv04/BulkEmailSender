@@ -201,7 +201,10 @@ exports.sendCampaign = async (req, res) => {
             const rec = campaign.recipients.find(
               (r) => r.email === update.email,
             );
-            if (rec) rec.status = "failed";
+            if (rec) {
+              rec.status = "failed";
+              rec.error = update.error || "Unknown error";
+            }
           } else if (update.type === "completed") {
             campaign.status = "completed";
           }

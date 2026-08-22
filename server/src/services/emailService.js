@@ -211,19 +211,48 @@ exports.sendEmail = async ({
 }) => {
   const text = htmlToText(html);
 
-  if (!transporter) {
-    const missingConfig = !process.env.SMTP_USER || !process.env.SMTP_PASS;
-    const message = missingConfig
-      ? "SMTP is not configured on the server. Set SMTP_USER and SMTP_PASS in Render/production environment."
-      : "SMTP transport could not be initialized.";
+  // Explicit fallback to process.env for production worker
+  const smtpUser = process.env.SMTP_USER || runtimeSmtpUser;
+  const smtpPass = process.env.SMTP_PASS || runtimeSmtpPass;
+  const smtpHost = process.env.SMTP_HOST || "smtp.gmail.com";
+  const smtpPort = Number(process.env.SMTP_PORT || 465);
+
+  if (!smtpUser || !smtpPass) {
+    const message = `SMTP credentials missing in worker. User: ${Boolean(smtpUser)}, Pass: ${Boolean(smtpPass)}. Set SMTP_USER and SMTP_PASS in environment.`;
     console.error(message);
-    return { success: false, error: message };
+    return {
+      success: false,
+      error: message,
+      code: "SMTP_CONFIG_MISSING",
+    };
+  }
+
+  // Ensure transporter exists or create one if not
+  if (!transporter) {
+    console.log(
+      `Transporter not initialized. Creating one with env credentials.`,
+    );
+    const appPassword = String(smtpPass).replace(/\s+/g, "");
+    transporter = require("nodemailer").createTransport({
+      host: smtpHost,
+      port: 465,
+      secure: true,
+      pool: true,
+      maxConnections: 5,
+      maxMessages: 100,
+      auth: { user: smtpUser.trim(), pass: appPassword },
+      tls: { rejectUnauthorized: false },
+      connectionTimeout: 10000,
+      greetingTimeout: 5000,
+      socketTimeout: 10000,
+    });
   }
 
   try {
-    const senderAddress = transporter.options.auth?.user || fromEmail || process.env.SMTP_USER;
+    const senderAddress = smtpUser.trim();
     const from = `"${fromName || "SenderPortal"}" <${senderAddress}>`;
 
+    console.log(`Sending email to ${to} from ${from}`);
     const info = await transporter.sendMail({
       from,
       to,
@@ -234,7 +263,15 @@ exports.sendEmail = async ({
     });
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error(`Failed to send to ${to}:`, error?.message || error);
-    return { success: false, error: error.message || String(error) };
+    const errorCode = error?.code || "SMTP_SEND_ERROR";
+    const errorMessage = error?.message || String(error);
+    console.error(
+      `Failed to send to ${to}: [${errorCode}] ${errorMessage}`,
+    );
+    return {
+      success: false,
+      error: errorMessage,
+      code: errorCode,
+    };
   }
 };
