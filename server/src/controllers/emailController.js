@@ -53,24 +53,27 @@ exports.configureSmtp = async (req, res) => {
     const provider = String(
       body.provider ||
         process.env.EMAIL_PROVIDER ||
-        (process.env.RENDER || process.env.NODE_ENV === "production"
-          ? "resend"
-          : "smtp"),
+        (body.email ||
+        body.user ||
+        body.password ||
+        body.pass ||
+        body.SMTP_USER ||
+        body.SMTP_PASS ||
+        process.env.SMTP_USER ||
+        process.env.SMTP_PASS
+          ? "smtp"
+          : process.env.RENDER &&
+              process.env.RESEND_API_KEY &&
+              process.env.RESEND_FROM_EMAIL
+            ? "resend"
+            : "smtp"),
     )
       .trim()
       .toLowerCase();
     const email =
-      body.email ||
-      body.user ||
-      body.SMTP_USER ||
-      body.smtpUser ||
-      "";
+      body.email || body.user || body.SMTP_USER || body.smtpUser || "";
     const password =
-      body.password ||
-      body.pass ||
-      body.SMTP_PASS ||
-      body.smtpPass ||
-      "";
+      body.password || body.pass || body.SMTP_PASS || body.smtpPass || "";
     const host =
       body.host || body.SMTP_HOST || body.smtpHost || process.env.SMTP_HOST;
     const normalizedEmail = String(email || "").trim();

@@ -16,8 +16,48 @@ let runtimeSmtpPass = null;
 const isRenderEnvironment = () =>
   Boolean(process.env.RENDER) || process.env.NODE_ENV === "production";
 
-const getDefaultProvider = () =>
-  process.env.EMAIL_PROVIDER || (isRenderEnvironment() ? "resend" : "smtp");
+const hasProviderCredentials = (provider, env = process.env) => {
+  if (provider === "resend") {
+    return Boolean(env.RESEND_API_KEY && env.RESEND_FROM_EMAIL);
+  }
+  if (provider === "sendgrid") {
+    return Boolean(env.SENDGRID_API_KEY && env.SENDGRID_FROM_EMAIL);
+  }
+  return true;
+};
+
+const getDefaultProvider = (config = {}) => {
+  const explicitProvider = String(
+    config.provider || process.env.EMAIL_PROVIDER || "",
+  )
+    .trim()
+    .toLowerCase();
+
+  if (explicitProvider) {
+    return explicitProvider;
+  }
+
+  const hasSmtpCredentials = Boolean(
+    config.user ||
+    config.email ||
+    config.password ||
+    config.pass ||
+    config.SMTP_USER ||
+    config.SMTP_PASS ||
+    process.env.SMTP_USER ||
+    process.env.SMTP_PASS,
+  );
+
+  if (hasSmtpCredentials) {
+    return "smtp";
+  }
+
+  if (isRenderEnvironment() && hasProviderCredentials("resend")) {
+    return "resend";
+  }
+
+  return "smtp";
+};
 
 let runtimeProvider = getDefaultProvider();
 
@@ -70,8 +110,13 @@ const buildSmtpTransportOptions = (config = {}, env = process.env) => {
   };
 };
 
-const getProvider = () =>
-  String(process.env.EMAIL_PROVIDER || runtimeProvider || getDefaultProvider())
+const getProvider = (config = {}) =>
+  String(
+    config.provider ||
+      process.env.EMAIL_PROVIDER ||
+      runtimeProvider ||
+      getDefaultProvider(config),
+  )
     .trim()
     .toLowerCase();
 
@@ -216,6 +261,7 @@ createTransporter();
 
 module.exports.resolveSmtpConfig = resolveSmtpConfig;
 module.exports.buildSmtpTransportOptions = buildSmtpTransportOptions;
+module.exports.getDefaultProvider = getDefaultProvider;
 
 exports.configure = async (config = {}, legacyPass) => {
   const options =
@@ -223,7 +269,9 @@ exports.configure = async (config = {}, legacyPass) => {
       ? { email: config, password: legacyPass }
       : config || {};
   const provider = String(
-    options.provider || process.env.EMAIL_PROVIDER || getDefaultProvider(),
+    options.provider ||
+      process.env.EMAIL_PROVIDER ||
+      getDefaultProvider(options),
   )
     .trim()
     .toLowerCase();
