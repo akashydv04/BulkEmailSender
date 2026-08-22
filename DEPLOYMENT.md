@@ -36,8 +36,8 @@ git push origin feature/dynamic-resume-emails
    - `SMTP_GREETING_TIMEOUT=5000`
    - `SMTP_SOCKET_TIMEOUT=10000`
    - `GEMINI_API_KEY=your_google_api_key_if_using_resume_generation`
-   - `GEMINI_MODEL=gemini-1.5-flash`
-   - `GEMINI_FALLBACK_MODEL=gemini-2.0-flash`
+   - `GEMINI_MODEL=gemini-2.5-flash`
+   - `GEMINI_FALLBACK_MODEL=gemini-2.5-flash`
 
    For the Resend HTTP fallback, set:
    - `EMAIL_PROVIDER=resend`
@@ -48,6 +48,7 @@ git push origin feature/dynamic-resume-emails
    - `EMAIL_PROVIDER=sendgrid`
    - `SENDGRID_API_KEY=SG.your_api_key`
    - `SENDGRID_FROM_EMAIL=verified-sender@your-domain.com`
+
 7. Click Create Web Service.
 8. Copy the backend URL after deployment.
 
