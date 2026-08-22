@@ -142,9 +142,7 @@ async function processCampaign(
 
   // Validate SMTP config
   if (!smtpConfig.user || !smtpConfig.pass) {
-    console.error(
-      "SMTP config missing in campaign worker. Cannot proceed.",
-    );
+    console.error("SMTP config missing in campaign worker. Cannot proceed.");
     statusCallback({ type: "completed" });
     return;
   }

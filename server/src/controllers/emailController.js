@@ -142,7 +142,8 @@ exports.sendCampaign = async (req, res) => {
     // or standard fields if handled by Multer.
     // We expect Multer to parse `req.body` and `req.files`.
 
-    let { recipients, subject, body, senderDetails, footer, smtpConfig } = req.body;
+    let { recipients, subject, body, senderDetails, footer, smtpConfig } =
+      req.body;
 
     // Parse JSON strings if they came from FormData
     if (typeof recipients === "string") recipients = JSON.parse(recipients);
@@ -162,17 +163,36 @@ exports.sendCampaign = async (req, res) => {
 
     // Dynamically construct SMTP config from request or environment
     const dynamicSmtpConfig = {
-      host: smtpConfig?.host || req.body.host || process.env.SMTP_HOST || "smtp.gmail.com",
-      port: Number(smtpConfig?.port || req.body.port || process.env.SMTP_PORT || 465),
+      host:
+        smtpConfig?.host ||
+        req.body.host ||
+        process.env.SMTP_HOST ||
+        "smtp.gmail.com",
+      port: Number(
+        smtpConfig?.port || req.body.port || process.env.SMTP_PORT || 465,
+      ),
       secure: true,
-      user: smtpConfig?.user || smtpConfig?.email || req.body.user || req.body.email || process.env.SMTP_USER,
-      pass: (smtpConfig?.pass || smtpConfig?.password || req.body.pass || req.body.password || process.env.SMTP_PASS || "").replace(/\s+/g, ""),
+      user:
+        smtpConfig?.user ||
+        smtpConfig?.email ||
+        req.body.user ||
+        req.body.email ||
+        process.env.SMTP_USER,
+      pass: (
+        smtpConfig?.pass ||
+        smtpConfig?.password ||
+        req.body.pass ||
+        req.body.password ||
+        process.env.SMTP_PASS ||
+        ""
+      ).replace(/\s+/g, ""),
     };
 
     if (!dynamicSmtpConfig.user || !dynamicSmtpConfig.pass) {
       return res.status(400).json({
         success: false,
-        message: "Missing required SMTP credentials (user/email and pass/password).",
+        message:
+          "Missing required SMTP credentials (user/email and pass/password).",
       });
     }
 
