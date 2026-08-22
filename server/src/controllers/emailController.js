@@ -50,35 +50,17 @@ const campaigns = new Map();
 exports.configureSmtp = async (req, res) => {
   try {
     const body = req.body || {};
-    const provider = String(
-      body.provider ||
-        process.env.EMAIL_PROVIDER ||
-        (body.email ||
-        body.user ||
-        body.password ||
-        body.pass ||
-        body.SMTP_USER ||
-        body.SMTP_PASS ||
-        process.env.SMTP_USER ||
-        process.env.SMTP_PASS
-          ? "smtp"
-          : process.env.RENDER &&
-              process.env.RESEND_API_KEY &&
-              process.env.RESEND_FROM_EMAIL
-            ? "resend"
-            : "smtp"),
-    )
-      .trim()
-      .toLowerCase();
     const email =
       body.email || body.user || body.SMTP_USER || body.smtpUser || "";
     const password =
       body.password || body.pass || body.SMTP_PASS || body.smtpPass || "";
     const host =
       body.host || body.SMTP_HOST || body.smtpHost || process.env.SMTP_HOST;
+
     const normalizedEmail = String(email || "").trim();
     const normalizedPassword = String(password || "").replace(/\s+/g, "");
-    if (provider === "smtp" && (!normalizedEmail || !normalizedPassword)) {
+
+    if (!normalizedEmail || !normalizedPassword) {
       return res.status(400).json({
         success: false,
         message: "Email and Password are required",
@@ -87,8 +69,7 @@ exports.configureSmtp = async (req, res) => {
       });
     }
 
-    const configured = await emailService.configure({
-      provider,
+    const configured = emailService.configure({
       host,
       email: normalizedEmail,
       user: normalizedEmail,
@@ -98,6 +79,7 @@ exports.configureSmtp = async (req, res) => {
       SMTP_USER: normalizedEmail,
       SMTP_PASS: normalizedPassword,
     });
+
     if (!configured) {
       return res.status(422).json({
         success: false,
@@ -107,20 +89,18 @@ exports.configureSmtp = async (req, res) => {
       });
     }
 
-    res.json({
+    return res.status(200).json({
       success: true,
-      message: `${provider} email provider configured successfully`,
+      message: "SMTP configured and verified successfully",
     });
   } catch (error) {
     console.error("SMTP Configuration Error:", error);
-    const responsePayload = {
+    return res.status(422).json({
       success: false,
       message: error.message || "SMTP authentication or validation failed",
-      error: error.response || error.message || "SMTP authentication or validation failed",
+      error: error.response || error.message,
       code: error.code || "VALIDATION_OR_AUTH_ERROR",
-    };
-
-    return res.status(422).json(responsePayload);
+    });
   }
 };
 
