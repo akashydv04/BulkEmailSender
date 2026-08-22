@@ -57,6 +57,35 @@ exports.configureSmtp = async (req, res) => {
     const host =
       body.host || body.SMTP_HOST || body.smtpHost || process.env.SMTP_HOST;
 
+    const provider = emailService.getDefaultProvider();
+
+    // HTTP API providers (Resend/SendGrid) don't need a socket-verified
+    // SMTP account — they just need a server-side API key. Skip the
+    // email/password requirement entirely in that mode.
+    if (provider === "resend" || provider === "sendgrid") {
+      const configured = emailService.configure({
+        email,
+        user: email,
+        provider,
+      });
+
+      if (!configured) {
+        return res.status(422).json({
+          success: false,
+          message: `${provider} configuration failed.`,
+          error: `${provider} configuration failed.`,
+          code: "EMAIL_PROVIDER_CONFIG_ERROR",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: `Email provider (${provider}) configured successfully`,
+        provider,
+      });
+    }
+
+    // ---- SMTP path (unchanged) ----
     const normalizedEmail = String(email || "").trim();
     const normalizedPassword = String(password || "").replace(/\s+/g, "");
 
@@ -94,7 +123,7 @@ exports.configureSmtp = async (req, res) => {
       message: "SMTP configured and verified successfully",
     });
   } catch (error) {
-    console.error("SMTP Configuration Error:", error);
+    console.error("Email Configuration Error:", error);
     return res.status(422).json({
       success: false,
       message: error.message || "SMTP authentication or validation failed",
@@ -161,7 +190,10 @@ exports.sendCampaign = async (req, res) => {
       return res.status(400).json({ error: "Subject and Body are required" });
     }
 
-    // Dynamically construct SMTP config from request or environment
+    const provider = emailService.getDefaultProvider();
+
+    // Dynamically construct SMTP config from request or environment.
+    // Only meaningful when provider === "smtp"; harmless to build either way.
     const dynamicSmtpConfig = {
       host:
         smtpConfig?.host ||
@@ -188,7 +220,12 @@ exports.sendCampaign = async (req, res) => {
       ).replace(/\s+/g, ""),
     };
 
-    if (!dynamicSmtpConfig.user || !dynamicSmtpConfig.pass) {
+    // HTTP API providers (Resend/SendGrid) don't need user-supplied SMTP
+    // credentials at all — the server-side API key handles auth.
+    if (
+      provider === "smtp" &&
+      (!dynamicSmtpConfig.user || !dynamicSmtpConfig.pass)
+    ) {
       return res.status(400).json({
         success: false,
         message:

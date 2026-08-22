@@ -1,10 +1,9 @@
 const emailService = require("./emailService");
-const nodemailer = require("nodemailer");
 const sanitizeHtml = require("sanitize-html");
 
 const MAX_RETRIES = 3;
 const RATE_LIMIT_DELAY = 2000;
-const SMTP_TIMEOUT_MS = 15000;
+const SEND_TIMEOUT_MS = 15000;
 
 exports.addCampaignToQueue = async (
   campaignId,
@@ -29,14 +28,15 @@ exports.addCampaignToQueue = async (
   );
 };
 
-async function sendWithTimeout(transporter, mailOptions) {
+// Wraps an in-flight send promise with a timeout so a hung connection
+// (e.g. a blocked SMTP port) fails fast instead of hanging the whole batch.
+async function sendWithTimeout(sendPromise) {
   return Promise.race([
-    transporter.sendMail(mailOptions),
+    sendPromise,
     new Promise((_, reject) => {
       setTimeout(
-        () =>
-          reject(new Error(`SMTP send timed out after ${SMTP_TIMEOUT_MS}ms`)),
-        SMTP_TIMEOUT_MS,
+        () => reject(new Error(`Send timed out after ${SEND_TIMEOUT_MS}ms`)),
+        SEND_TIMEOUT_MS,
       );
     }),
   ]);
@@ -140,32 +140,17 @@ async function processCampaign(
   const footerHtml = generateFooterHtml(footer);
   const batchSize = 5;
 
-  // Validate SMTP config
-  if (!smtpConfig.user || !smtpConfig.pass) {
+  const provider = emailService.getDefaultProvider();
+
+  // SMTP mode needs user-supplied credentials; HTTP API providers
+  // (Resend/SendGrid) authenticate with a server-side API key instead.
+  if (provider === "smtp" && (!smtpConfig.user || !smtpConfig.pass)) {
     console.error("SMTP config missing in campaign worker. Cannot proceed.");
     statusCallback({ type: "completed" });
     return;
   }
 
-  // Create dynamic transporter for this campaign
-  const transporter = nodemailer.createTransport({
-    host: smtpConfig.host || "smtp.gmail.com",
-    port: 465,
-    secure: true,
-    pool: true,
-    maxConnections: 5,
-    maxMessages: 100,
-    auth: {
-      user: smtpConfig.user.trim(),
-      pass: smtpConfig.pass,
-    },
-    tls: { rejectUnauthorized: false },
-    connectionTimeout: 10000,
-    greetingTimeout: 5000,
-    socketTimeout: 10000,
-  });
-
-  const authUser = smtpConfig.user.trim();
+  const authUser = smtpConfig?.user ? smtpConfig.user.trim() : "";
 
   const processRecipient = async (recipient) => {
     const isExcel = !!recipient.subject && !!recipient.body;
@@ -248,14 +233,17 @@ async function processCampaign(
     let attempts = 0;
     while (attempts < MAX_RETRIES) {
       try {
-        const result = await sendWithTimeout({
-          to: recipient.email,
-          subject: personalizedSubject,
-          html: fullHtml,
-          fromName: footer.name || senderDetails.name || "SenderPortal",
-          fromEmail: authUser || senderDetails.email,
-          attachments: attachments,
-        });
+        const result = await sendWithTimeout(
+          emailService.sendEmail({
+            to: recipient.email,
+            subject: personalizedSubject,
+            html: fullHtml,
+            fromName: footer.name || senderDetails.name || "SenderPortal",
+            fromEmail: authUser || senderDetails.email,
+            attachments: attachments,
+            smtpConfig,
+          }),
+        );
 
         if (result.success) {
           statusCallback({ type: "sent", email: recipient.email });
@@ -266,7 +254,7 @@ async function processCampaign(
         if (attempts >= MAX_RETRIES) {
           const failureDetail = `${result.error || "unknown error"}${result.code ? ` [${result.code}]` : ""}`;
           console.error(
-            `SMTP failure for ${recipient.email}: ${failureDetail}`,
+            `Send failure for ${recipient.email}: ${failureDetail}`,
           );
           statusCallback({
             type: "failed",
@@ -279,10 +267,10 @@ async function processCampaign(
         await new Promise((resolve) => setTimeout(resolve, 2000 * attempts));
       } catch (error) {
         attempts++;
-        const errorCode = error?.code || "SMTP_TIMEOUT";
+        const errorCode = error?.code || "SEND_TIMEOUT";
         const detail = error?.message || String(error);
         console.error(
-          `SMTP timeout or error for ${recipient.email}: [${errorCode}] ${detail}`,
+          `Send timeout or error for ${recipient.email}: [${errorCode}] ${detail}`,
         );
         if (attempts >= MAX_RETRIES) {
           statusCallback({
