@@ -1,4 +1,5 @@
 const emailService = require("./emailService");
+const nodemailer = require("nodemailer");
 const sanitizeHtml = require("sanitize-html");
 
 const MAX_RETRIES = 3;
@@ -13,6 +14,7 @@ exports.addCampaignToQueue = async (
   senderDetails,
   footer,
   attachments,
+  smtpConfig,
   statusCallback,
 ) => {
   processCampaign(
@@ -22,13 +24,14 @@ exports.addCampaignToQueue = async (
     senderDetails,
     footer,
     attachments,
+    smtpConfig,
     statusCallback,
   );
 };
 
-async function sendWithTimeout(payload) {
+async function sendWithTimeout(transporter, mailOptions) {
   return Promise.race([
-    emailService.sendEmail(payload),
+    transporter.sendMail(mailOptions),
     new Promise((_, reject) => {
       setTimeout(
         () =>
@@ -131,13 +134,40 @@ async function processCampaign(
   senderDetails,
   footer,
   attachments,
+  smtpConfig,
   statusCallback,
 ) {
   const footerHtml = generateFooterHtml(footer);
   const batchSize = 5;
-  const authUser = String(
-    process.env.SMTP_USER || senderDetails.email || "",
-  ).trim();
+
+  // Validate SMTP config
+  if (!smtpConfig.user || !smtpConfig.pass) {
+    console.error(
+      "SMTP config missing in campaign worker. Cannot proceed.",
+    );
+    statusCallback({ type: "completed" });
+    return;
+  }
+
+  // Create dynamic transporter for this campaign
+  const transporter = nodemailer.createTransport({
+    host: smtpConfig.host || "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    pool: true,
+    maxConnections: 5,
+    maxMessages: 100,
+    auth: {
+      user: smtpConfig.user.trim(),
+      pass: smtpConfig.pass,
+    },
+    tls: { rejectUnauthorized: false },
+    connectionTimeout: 10000,
+    greetingTimeout: 5000,
+    socketTimeout: 10000,
+  });
+
+  const authUser = smtpConfig.user.trim();
 
   const processRecipient = async (recipient) => {
     const isExcel = !!recipient.subject && !!recipient.body;
